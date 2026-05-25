@@ -6,7 +6,7 @@ import { formatBusinessDetail } from "../formatters.js";
 import type { BusinessDetail } from "../types.js";
 
 const inputSchema = {
-  id: z.string().min(1).describe("Business id."),
+  business_id: z.string().min(1).describe("Business id (the `id` value returned by search/find tools)."),
   latitude: z
     .number()
     .min(-90)
@@ -27,7 +27,7 @@ export function registerGetBusiness(server: McpServer) {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (args) => {
-      const variables: Record<string, unknown> = { id: args.id };
+      const variables: Record<string, unknown> = { id: args.business_id };
       if (typeof args.latitude === "number" && typeof args.longitude === "number") {
         variables.location = { latitude: args.latitude, longitude: args.longitude };
       }

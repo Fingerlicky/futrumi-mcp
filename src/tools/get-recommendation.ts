@@ -6,7 +6,10 @@ import { formatRecommendationDetail } from "../formatters.js";
 import type { RecommendationDetail } from "../types.js";
 
 const inputSchema = {
-  id: z.string().min(1).describe("Recommendation id (returned by search_recommendations as `rec`)."),
+  recommendation_id: z
+    .string()
+    .min(1)
+    .describe("Recommendation id (the `rec` value returned by search_recommendations)."),
 };
 
 export function registerGetRecommendation(server: McpServer) {
@@ -21,7 +24,7 @@ export function registerGetRecommendation(server: McpServer) {
     },
     async (args) => {
       const data = await gqlRequest<{ recommendation: RecommendationDetail }>(RECOMMENDATION_QUERY, {
-        id: args.id,
+        id: args.recommendation_id,
       });
       return {
         content: [{ type: "text", text: formatRecommendationDetail(data.recommendation) }],

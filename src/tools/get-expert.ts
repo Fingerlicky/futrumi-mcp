@@ -11,7 +11,7 @@ const CZ_CENTER = { latitude: 49.8, longitude: 15.5 };
 const CZ_RADIUS_METERS = 350_000;
 
 const inputSchema = {
-  id: z.string().min(1).describe("Expert id."),
+  expert_id: z.string().min(1).describe("Expert id (the `expert id` value returned by list_experts)."),
   limit: z
     .number()
     .int()
@@ -33,11 +33,11 @@ export function registerGetExpert(server: McpServer) {
     },
     async (args) => {
       const [expertData, recsData] = await Promise.all([
-        gqlRequest<{ expert: ExpertDetail }>(EXPERT_QUERY, { id: args.id }),
+        gqlRequest<{ expert: ExpertDetail }>(EXPERT_QUERY, { id: args.expert_id }),
         gqlRequest<{ recommendations: { total: number; edges: RecommendationListItem[] } }>(
           RECOMMENDATIONS_QUERY,
           {
-            filter: { center: CZ_CENTER, distance: CZ_RADIUS_METERS, expertId: args.id },
+            filter: { center: CZ_CENTER, distance: CZ_RADIUS_METERS, expertId: args.expert_id },
             pagination: { pageNumber: 0, pageSize: args.limit },
           },
         ),

@@ -22,7 +22,7 @@ const inputSchema = {
     .max(50000)
     .default(2000)
     .describe("Search radius in meters. Default 2000 m (good for one Prague district)."),
-  expertId: z
+  expert_id: z
     .string()
     .optional()
     .describe("Optional. Restrict to recommendations from a specific expert (by id)."),
@@ -60,7 +60,7 @@ export function registerSearchRecommendations(server: McpServer) {
         filter: {
           center: location,
           distance: args.radiusMeters,
-          ...(args.expertId ? { expertId: args.expertId } : {}),
+          ...(args.expert_id ? { expertId: args.expert_id } : {}),
         },
         pagination: { pageNumber: 0, pageSize: args.limit },
       });

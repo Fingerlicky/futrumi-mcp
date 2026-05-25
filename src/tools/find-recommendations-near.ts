@@ -24,7 +24,13 @@ const inputSchema = {
     .boolean()
     .default(false)
     .describe("If true, only return businesses currently open."),
-  limit: z.number().int().min(1).max(50).default(20),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .default(25)
+    .describe("Max businesses to return. Bump to 40-50 for dense areas like Holešovice or Brno center."),
 };
 
 export function registerFindRecommendationsNear(server: McpServer) {
