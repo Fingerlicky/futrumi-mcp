@@ -20,8 +20,10 @@ const inputSchema = {
     .int()
     .min(100)
     .max(50000)
-    .default(2000)
-    .describe("Search radius in meters. Default 2000 m (good for one Prague district)."),
+    .optional()
+    .describe(
+      "Search radius in meters. If omitted, the server uses 2000 m for points/neighborhoods and a larger city-aware radius for city names like Praha or Brno.",
+    ),
   expert_id: z
     .string()
     .optional()
@@ -48,24 +50,25 @@ export function registerSearchRecommendations(server: McpServer) {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (args) => {
-      const { location, resolvedFrom } = await resolveLocation({
+      const { location, resolvedFrom, suggestedRadiusMeters } = await resolveLocation({
         latitude: args.latitude,
         longitude: args.longitude,
         locationQuery: args.locationQuery,
       });
+      const radiusMeters = args.radiusMeters ?? Math.max(suggestedRadiusMeters ?? 0, 2000);
 
       const data = await gqlRequest<{
         recommendations: { total: number; edges: RecommendationListItem[] };
       }>(RECOMMENDATIONS_QUERY, {
         filter: {
           center: location,
-          distance: args.radiusMeters,
+          distance: radiusMeters,
           ...(args.expert_id ? { expertId: args.expert_id } : {}),
         },
         pagination: { pageNumber: 0, pageSize: args.limit },
       });
 
-      const radiusKm = (args.radiusMeters / 1000).toFixed(1).replace(".", ",");
+      const radiusKm = (radiusMeters / 1000).toFixed(1).replace(".", ",");
       const header = `Doporučení do ${radiusKm} km od ${resolvedFrom} (${data.recommendations.edges.length} z ${data.recommendations.total})`;
 
       return {

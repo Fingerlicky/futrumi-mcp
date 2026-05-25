@@ -18,8 +18,10 @@ const inputSchema = {
     .int()
     .min(100)
     .max(50000)
-    .default(1500)
-    .describe("Search radius in meters. Default 1500 m (walking distance)."),
+    .optional()
+    .describe(
+      "Search radius in meters. If omitted, the server uses 1500 m for points/neighborhoods and a larger city-aware radius for city names like Praha or Brno.",
+    ),
   openNow: z
     .boolean()
     .default(false)
@@ -44,25 +46,26 @@ export function registerFindRecommendationsNear(server: McpServer) {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (args) => {
-      const { location, resolvedFrom } = await resolveLocation({
+      const { location, resolvedFrom, suggestedRadiusMeters } = await resolveLocation({
         latitude: args.latitude,
         longitude: args.longitude,
         locationQuery: args.locationQuery,
       });
+      const radiusMeters = args.radiusMeters ?? Math.max(suggestedRadiusMeters ?? 0, 1500);
 
       const data = await gqlRequest<{
         recommendedBusinesses: { total: number; edges: BusinessListItem[] };
       }>(RECOMMENDED_BUSINESSES_QUERY, {
         filter: {
           center: location,
-          distance: args.radiusMeters,
+          distance: radiusMeters,
           open: args.openNow,
         },
         location,
         pagination: { pageNumber: 0, pageSize: args.limit },
       });
 
-      const radiusKm = (args.radiusMeters / 1000).toFixed(1).replace(".", ",");
+      const radiusKm = (radiusMeters / 1000).toFixed(1).replace(".", ",");
       const header = `Doporučené podniky do ${radiusKm} km od ${resolvedFrom}${args.openNow ? " (jen otevřené)" : ""} (${data.recommendedBusinesses.edges.length} z ${data.recommendedBusinesses.total})`;
 
       return {

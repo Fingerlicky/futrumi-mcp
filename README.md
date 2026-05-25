@@ -40,3 +40,5 @@ See `.env.example`.
 ## Implementation notes
 
 Running notes about design decisions, deviations, and open questions live in [`implementation-notes.html`](implementation-notes.html). Open it in any browser.
+
+Product and growth follow-ups live in [`ROADMAP.md`](ROADMAP.md).
