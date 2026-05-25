@@ -1,0 +1,46 @@
+# DigitalOcean App Platform spec for futrumi-mcp.
+# Reference: https://docs.digitalocean.com/products/app-platform/reference/app-spec/
+#
+# Wire this to the futrumi-mcp GitHub repo (once pushed) and the platform will
+# auto-deploy on every push to main.
+
+name: futrumi-mcp
+region: fra
+
+services:
+  - name: mcp
+    dockerfile_path: Dockerfile
+    source_dir: /
+    github:
+      repo: futured/futrumi-mcp # TODO: confirm org/repo path before first deploy
+      branch: main
+      deploy_on_push: true
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 8080
+    health_check:
+      http_path: /healthz
+      initial_delay_seconds: 5
+      period_seconds: 10
+    routes:
+      - path: /
+    envs:
+      - key: FUTRUMI_GRAPHQL_URL
+        value: https://futrumi-prod-w7u56.ondigitalocean.app/graphql
+        scope: RUN_AND_BUILD_TIME
+      - key: PORT
+        value: "8080"
+        scope: RUN_TIME
+      - key: LOG_LEVEL
+        value: info
+        scope: RUN_TIME
+      - key: FUTRUMI_DEEPLINK_BASE
+        value: https://futrumi.cz
+        scope: RUN_TIME
+
+# Domains
+# Once a custom domain is configured in the DigitalOcean dashboard
+# (e.g. mcp.futrumi.cz), uncomment this block:
+# domains:
+#   - domain: mcp.futrumi.cz
+#     type: PRIMARY
