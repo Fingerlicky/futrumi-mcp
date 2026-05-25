@@ -26,7 +26,7 @@ Then connect to `http://localhost:8080/mcp` with transport "Streamable HTTP".
 
 | Tool | Purpose |
 |---|---|
-| `search_recommendations` | Intent-shaped search ("tipy na X v Y") — returns a candidate set the model filters |
+| `search_recommendations` | Intent-shaped search ("tipy na X v Y") with local semantic/concept ranking |
 | `find_recommendations_near` | Geo lookup near coords or place name |
 | `get_recommendation` | Full recommendation detail with expert quote, meals, photos |
 | `get_business` | Full business detail with all expert recommendations |

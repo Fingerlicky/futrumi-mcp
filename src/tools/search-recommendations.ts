@@ -4,9 +4,25 @@ import { gqlRequest } from "../graphql-client.js";
 import { RECOMMENDATIONS_QUERY } from "../queries.js";
 import { formatRecommendationList } from "../formatters.js";
 import { resolveLocation } from "../geocode.js";
+import { rankRecommendationsByQuery } from "../semantic-search.js";
 import type { RecommendationListItem } from "../types.js";
 
+const DEFAULT_SEMANTIC_CANDIDATE_LIMIT = 120;
+const configuredSemanticCandidateLimit = Number.parseInt(
+  process.env.SEMANTIC_CANDIDATE_LIMIT ?? `${DEFAULT_SEMANTIC_CANDIDATE_LIMIT}`,
+  10,
+);
+const semanticCandidateLimit = Number.isFinite(configuredSemanticCandidateLimit)
+  ? Math.min(200, Math.max(50, configuredSemanticCandidateLimit))
+  : DEFAULT_SEMANTIC_CANDIDATE_LIMIT;
+
 const inputSchema = {
+  query: z
+    .string()
+    .optional()
+    .describe(
+      'Natural-language intent to rank results by, e.g. "ramen", "vietnamská", "brunch", "na rande", "levný oběd", "vinný bar".',
+    ),
   locationQuery: z
     .string()
     .optional()
@@ -45,7 +61,7 @@ export function registerSearchRecommendations(server: McpServer) {
     {
       title: "Search expert recommendations",
       description:
-        'Get a candidate set of expert-recommended restaurants/cafes/bars/etc around a location. Use this when the user asks for a specific kind of place ("good ramen in Vinohrady", "rooftop bars near Wenceslas Square") — the response is a list of cards with each expert\'s quote, and you should pick the best matches from it. The data is Czech-only and includes only PUBLISHED recommendations. Returns markdown.',
+        'Search and rank expert-recommended restaurants/cafes/bars/etc around a location. Use this when the user asks for a specific cuisine, meal, occasion, vibe, or category ("good ramen in Vinohrady", "brunch in Brno", "vinný bar na rande"). Pass the user intent in `query`; the server ranks candidates by semantic-ish food/occasion relevance before returning markdown. The data is Czech-only and includes only PUBLISHED recommendations.',
       inputSchema,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -56,6 +72,8 @@ export function registerSearchRecommendations(server: McpServer) {
         locationQuery: args.locationQuery,
       });
       const radiusMeters = args.radiusMeters ?? Math.max(suggestedRadiusMeters ?? 0, 2000);
+      const query = args.query?.trim();
+      const candidateLimit = query ? Math.max(args.limit, semanticCandidateLimit) : args.limit;
 
       const data = await gqlRequest<{
         recommendations: { total: number; edges: RecommendationListItem[] };
@@ -65,14 +83,17 @@ export function registerSearchRecommendations(server: McpServer) {
           distance: radiusMeters,
           ...(args.expert_id ? { expertId: args.expert_id } : {}),
         },
-        pagination: { pageNumber: 0, pageSize: args.limit },
+        pagination: { pageNumber: 0, pageSize: candidateLimit },
       });
 
+      const ranked = rankRecommendationsByQuery(data.recommendations.edges, query, args.limit);
       const radiusKm = (radiusMeters / 1000).toFixed(1).replace(".", ",");
-      const header = `Doporučení do ${radiusKm} km od ${resolvedFrom} (${data.recommendations.edges.length} z ${data.recommendations.total})`;
+      const header = query
+        ? `Nejrelevantnější doporučení pro "${query}" do ${radiusKm} km od ${resolvedFrom} (${ranked.length} z ${data.recommendations.edges.length} kandidátů, celkem ${data.recommendations.total})`
+        : `Doporučení do ${radiusKm} km od ${resolvedFrom} (${data.recommendations.edges.length} z ${data.recommendations.total})`;
 
       return {
-        content: [{ type: "text", text: formatRecommendationList(data.recommendations.edges, header) }],
+        content: [{ type: "text", text: formatRecommendationList(ranked, header) }],
       };
     },
   );
