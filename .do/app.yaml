@@ -12,7 +12,7 @@ services:
     dockerfile_path: Dockerfile
     source_dir: /
     github:
-      repo: futured/futrumi-mcp # TODO: confirm org/repo path before first deploy
+      repo: Fingerlicky/futrumi-mcp
       branch: main
       deploy_on_push: true
     instance_size_slug: basic-xxs
