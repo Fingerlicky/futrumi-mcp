@@ -40,8 +40,9 @@ See `.env.example`.
 ## Project docs
 
 - [`DEPLOY.md`](DEPLOY.md) — production deploy guide (DigitalOcean App Platform)
-- [`SUBMISSIONS.md`](SUBMISSIONS.md) — submission artifacts for Claude Connectors directory, ChatGPT App Directory, and the MCP Registry
 - [`connector-description.md`](connector-description.md) — reusable copy (tagline, short and long descriptions) for submission forms
 - [`server.json`](server.json) — metadata for the official MCP Registry
-- [`ROADMAP.md`](ROADMAP.md) — product and growth follow-ups
-- [`implementation-notes.html`](implementation-notes.html) — running log of design decisions, deviations, and open questions
+
+## License & contributing
+
+This repository is published as a reference for the Futrumi MCP integration. The server itself runs at `https://mcp.futrumi.cz/mcp` and is open for anyone to connect to. Issues and PRs are welcome.
