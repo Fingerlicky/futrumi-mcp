@@ -37,8 +37,11 @@ Then connect to `http://localhost:8080/mcp` with transport "Streamable HTTP".
 
 See `.env.example`.
 
-## Implementation notes
+## Project docs
 
-Running notes about design decisions, deviations, and open questions live in [`implementation-notes.html`](implementation-notes.html). Open it in any browser.
-
-Product and growth follow-ups live in [`ROADMAP.md`](ROADMAP.md).
+- [`DEPLOY.md`](DEPLOY.md) — production deploy guide (DigitalOcean App Platform)
+- [`SUBMISSIONS.md`](SUBMISSIONS.md) — submission artifacts for Claude Connectors directory, ChatGPT App Directory, and the MCP Registry
+- [`connector-description.md`](connector-description.md) — reusable copy (tagline, short and long descriptions) for submission forms
+- [`server.json`](server.json) — metadata for the official MCP Registry
+- [`ROADMAP.md`](ROADMAP.md) — product and growth follow-ups
+- [`implementation-notes.html`](implementation-notes.html) — running log of design decisions, deviations, and open questions

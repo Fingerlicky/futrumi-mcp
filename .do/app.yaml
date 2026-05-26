@@ -38,9 +38,6 @@ services:
         value: https://futrumi.cz
         scope: RUN_TIME
 
-# Domains
-# Once a custom domain is configured in the DigitalOcean dashboard
-# (e.g. mcp.futrumi.cz), uncomment this block:
-# domains:
-#   - domain: mcp.futrumi.cz
-#     type: PRIMARY
+domains:
+  - domain: mcp.futrumi.cz
+    type: PRIMARY

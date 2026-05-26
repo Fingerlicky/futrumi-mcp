@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.futrumi/futrumi",
+  "description": "Czech-language expert recommendations for restaurants, cafés, bars, and food businesses — surfaced from the Futrumi platform via a public read-only MCP interface.",
+  "repository": {
+    "url": "https://github.com/Fingerlicky/futrumi-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://futrumi.cz",
+  "version": "0.1.0",
+  "status": "active",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.futrumi.cz/mcp"
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "tool": "futrumi-mcp-publisher",
+      "version": "0.1.0",
+      "buildInfo": {
+        "language": "TypeScript",
+        "runtime": "Node.js 22",
+        "transport": "Streamable HTTP",
+        "auth": "none (anonymous read-only)"
+      }
+    }
+  }
+}
