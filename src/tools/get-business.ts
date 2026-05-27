@@ -22,7 +22,7 @@ export function registerGetBusiness(server: McpServer) {
     {
       title: "Get full business detail",
       description:
-        "Return full details for a single business: address, opening hours, web/menu/phone/social links, featured quotes, and every expert recommendation about it. Use when the user is zeroing in on one place.",
+        "Return full details for a single business: address, opening hours, web/menu/phone/social links, featured quotes, photos (venue, per-dish, and other expert photos), and every expert recommendation about it. Use when the user is zeroing in on one place or wants to see its photos.",
       inputSchema,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },

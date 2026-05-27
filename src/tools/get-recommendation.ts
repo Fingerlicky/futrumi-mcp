@@ -18,7 +18,7 @@ export function registerGetRecommendation(server: McpServer) {
     {
       title: "Get full recommendation detail",
       description:
-        "Return the full text of a single expert recommendation including the strong quote, the long description, meals with their descriptions, publish date, and business basics. Use after search_recommendations when the user wants more depth on one specific tip.",
+        "Return the full text of a single expert recommendation including the strong quote, the long description, meals with their descriptions and photos, any other photos, publish date, and business basics. Use after search_recommendations when the user wants more depth on one specific tip.",
       inputSchema,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },

@@ -67,6 +67,7 @@ export const RECOMMENDED_BUSINESSES_QUERY = /* GraphQL */ `
         expertsWithRecommendationCount
         photoUrl {
           url
+          approved
         }
       }
     }
@@ -101,10 +102,18 @@ export const RECOMMENDATION_QUERY = /* GraphQL */ `
         }
         openingHours
       }
+      photosWithoutMeal {
+        url
+        approved
+      }
       meals {
         id
         name
         description
+        photos {
+          url
+          approved
+        }
       }
     }
   }
@@ -134,6 +143,15 @@ export const BUSINESS_QUERY = /* GraphQL */ `
       expertsWithRecommendationCount
       photoUrl {
         url
+        approved
+      }
+      coverPhotoUrl {
+        url
+        approved
+      }
+      photos {
+        url
+        approved
       }
       webUrl
       menuUrl
@@ -157,10 +175,18 @@ export const BUSINESS_QUERY = /* GraphQL */ `
             url
           }
         }
+        photosWithoutMeal {
+          url
+          approved
+        }
         meals {
           id
           name
           description
+          photos {
+            url
+            approved
+          }
         }
       }
     }
