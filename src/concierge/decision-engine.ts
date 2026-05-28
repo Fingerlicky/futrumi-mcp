@@ -3,6 +3,20 @@ import { searchRecommendations } from "../services/search-recommendations.js";
 import type { RecommendationListItem } from "../types.js";
 import { answerWithOpenAI, canUseOpenAI } from "./openai-decision-engine.js";
 
+const LOCATION_PATTERNS = [
+  /\b(?:Praha|Prague)\s*\d{1,2}\b/iu,
+  /\bBrno(?:-[\p{Letter}\p{Mark}-]+)?\b/iu,
+  /\b(?:Praha|Prague|Karlín|Karlin|Holešovice|Holesovice|Vinohrady|Žižkov|Zizkov|Letná|Letna|Dejvice|Smíchov|Smichov|Národní|Narodni|Anděl|Andel)\b/iu,
+];
+
+export function inferLocationQuery(message: string): string | undefined {
+  for (const pattern of LOCATION_PATTERNS) {
+    const match = message.match(pattern);
+    if (match?.[0]) return match[0];
+  }
+  return undefined;
+}
+
 export interface ConciergeRequest {
   message: string;
   locationQuery?: string;
@@ -69,6 +83,10 @@ async function answerDeterministically(request: ConciergeRequest): Promise<strin
     return "Napiš mi, co řešíš: situaci, lokaci a klidně náladu nebo omezení.";
   }
 
+  if (!request.locationQuery && request.latitude === undefined && request.longitude === undefined) {
+    return "Kam to má být? Napiš lokalitu přímo do dotazu (třeba „Praha 7“, „Karlín“ nebo „Brno“), ať můžu hledat poblíž.";
+  }
+
   const result = await searchRecommendations({
     query: message,
     locationQuery: request.locationQuery,
@@ -87,18 +105,21 @@ export async function answerConciergeRequest(request: ConciergeRequest): Promise
     return "Napiš mi, co řešíš: situaci, lokaci a klidně náladu nebo omezení.";
   }
 
+  const locationQuery = request.locationQuery ?? inferLocationQuery(message);
+  const enriched: ConciergeRequest = { ...request, message, locationQuery };
+
   if (request.useLlm !== false && canUseOpenAI()) {
     try {
-      return await answerWithOpenAI({ ...request, message });
+      return await answerWithOpenAI(enriched);
     } catch (error) {
       if (process.env.CONCIERGE_FALLBACK_ON_LLM_ERROR === "false") {
         throw error;
       }
       const detail = error instanceof Error ? error.message : String(error);
-      const fallback = await answerDeterministically({ ...request, message });
+      const fallback = await answerDeterministically(enriched);
       return [`LLM concierge teď spadl, dávám deterministický fallback.`, `Důvod: ${detail}`, "", fallback].join("\n");
     }
   }
 
-  return answerDeterministically({ ...request, message });
+  return answerDeterministically(enriched);
 }

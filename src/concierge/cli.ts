@@ -1,7 +1,7 @@
 import "../env.js";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { answerConciergeRequest } from "./decision-engine.js";
+import { answerConciergeRequest, inferLocationQuery } from "./decision-engine.js";
 
 interface CliOptions {
   message: string;
@@ -11,12 +11,6 @@ interface CliOptions {
   useLlm?: boolean;
   help: boolean;
 }
-
-const LOCATION_PATTERNS = [
-  /\b(?:Praha|Prague)\s*\d{1,2}\b/iu,
-  /\bBrno(?:-[\p{Letter}\p{Mark}-]+)?\b/iu,
-  /\b(?:Praha|Prague|Karlín|Karlin|Holešovice|Holesovice|Vinohrady|Žižkov|Zizkov|Letná|Letna|Dejvice|Smíchov|Smichov|Národní|Narodni|Anděl|Andel)\b/iu,
-];
 
 function readNumberFlag(name: string, value: string | undefined): number {
   if (!value) {
@@ -57,14 +51,6 @@ function parseArgs(argv: string[]): CliOptions {
 
   options.message = messageParts.join(" ").trim();
   return options;
-}
-
-function inferLocationQuery(message: string): string | undefined {
-  for (const pattern of LOCATION_PATTERNS) {
-    const match = message.match(pattern);
-    if (match?.[0]) return match[0];
-  }
-  return undefined;
 }
 
 function printHelp(): void {
