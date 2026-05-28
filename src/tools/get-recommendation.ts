@@ -1,9 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { gqlRequest } from "../graphql-client.js";
-import { RECOMMENDATION_QUERY } from "../queries.js";
 import { formatRecommendationDetail } from "../formatters.js";
-import type { RecommendationDetail } from "../types.js";
+import { getRecommendation } from "../services/get-recommendation.js";
 
 const inputSchema = {
   recommendation_id: z
@@ -18,16 +16,14 @@ export function registerGetRecommendation(server: McpServer) {
     {
       title: "Get full recommendation detail",
       description:
-        "Return the full text of a single expert recommendation including the strong quote, the long description, meals with their descriptions, publish date, and business basics. Use after search_recommendations when the user wants more depth on one specific tip.",
+        "Return the full text of a single expert recommendation including the strong quote, the long description, meals with their descriptions and photos, any other photos, publish date, and business basics. Use after search_recommendations when the user wants more depth on one specific tip.",
       inputSchema,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (args) => {
-      const data = await gqlRequest<{ recommendation: RecommendationDetail }>(RECOMMENDATION_QUERY, {
-        id: args.recommendation_id,
-      });
+      const recommendation = await getRecommendation(args);
       return {
-        content: [{ type: "text", text: formatRecommendationDetail(data.recommendation) }],
+        content: [{ type: "text", text: formatRecommendationDetail(recommendation) }],
       };
     },
   );

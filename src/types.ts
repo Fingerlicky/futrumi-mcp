@@ -11,6 +11,13 @@ export interface BusinessTypeRef {
   name: string;
 }
 
+// FileWithDimensions from the schema. Unapproved photos come back with an empty
+// `url`, so always gate on `approved` before surfacing one.
+export interface PhotoRef {
+  url: string;
+  approved: boolean;
+}
+
 export interface ExpertRef {
   id: string;
   name: string;
@@ -29,6 +36,13 @@ export interface BusinessRef {
 export interface MealRef {
   id: string;
   name: string;
+}
+
+export interface MealDetail {
+  id: string;
+  name: string;
+  description: string;
+  photos: PhotoRef[] | null;
 }
 
 export interface RecommendationListItem {
@@ -52,7 +66,7 @@ export interface BusinessListItem {
   primaryBusinessType: BusinessTypeRef;
   openingHours: string;
   expertsWithRecommendationCount: number;
-  photoUrl: { url: string } | null;
+  photoUrl: PhotoRef | null;
 }
 
 export interface FeaturedQuote {
@@ -61,6 +75,8 @@ export interface FeaturedQuote {
 }
 
 export interface BusinessDetail extends BusinessListItem {
+  coverPhotoUrl: PhotoRef | null;
+  photos: PhotoRef[] | null;
   webUrl: string | null;
   menuUrl: string | null;
   phoneNumber: string | null;
@@ -78,7 +94,8 @@ export interface NestedRecommendation {
   strongQuote: string | null;
   publishDate: string | null;
   expert: ExpertRef;
-  meals: { id: string; name: string; description: string }[];
+  photosWithoutMeal: PhotoRef[];
+  meals: MealDetail[];
 }
 
 export interface RecommendationDetail {
@@ -88,7 +105,8 @@ export interface RecommendationDetail {
   publishDate: string | null;
   expert: ExpertRef;
   business: BusinessRef;
-  meals: { id: string; name: string; description: string }[];
+  photosWithoutMeal: PhotoRef[];
+  meals: MealDetail[];
 }
 
 export interface ExpertDetail {

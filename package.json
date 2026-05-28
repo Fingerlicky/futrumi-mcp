@@ -11,6 +11,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
+    "concierge:cli": "tsx src/concierge/cli.ts",
+    "concierge:telegram": "tsx src/concierge/telegram.ts",
     "typecheck": "tsc --noEmit",
     "inspect": "npx --yes @modelcontextprotocol/inspector"
   },

@@ -1,9 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { gqlRequest } from "../graphql-client.js";
-import { BUSINESS_QUERY } from "../queries.js";
 import { formatBusinessDetail } from "../formatters.js";
-import type { BusinessDetail } from "../types.js";
+import { getBusiness } from "../services/get-business.js";
 
 const inputSchema = {
   business_id: z.string().min(1).describe("Business id (the `id` value returned by search/find tools)."),
@@ -22,18 +20,14 @@ export function registerGetBusiness(server: McpServer) {
     {
       title: "Get full business detail",
       description:
-        "Return full details for a single business: address, opening hours, web/menu/phone/social links, featured quotes, and every expert recommendation about it. Use when the user is zeroing in on one place.",
+        "Return full details for a single business: address, opening hours, web/menu/phone/social links, featured quotes, photos (venue, per-dish, and other expert photos), and every expert recommendation about it. Use when the user is zeroing in on one place or wants to see its photos.",
       inputSchema,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (args) => {
-      const variables: Record<string, unknown> = { id: args.business_id };
-      if (typeof args.latitude === "number" && typeof args.longitude === "number") {
-        variables.location = { latitude: args.latitude, longitude: args.longitude };
-      }
-      const data = await gqlRequest<{ business: BusinessDetail }>(BUSINESS_QUERY, variables);
+      const business = await getBusiness(args);
       return {
-        content: [{ type: "text", text: formatBusinessDetail(data.business) }],
+        content: [{ type: "text", text: formatBusinessDetail(business) }],
       };
     },
   );

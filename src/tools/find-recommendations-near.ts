@@ -1,10 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { gqlRequest } from "../graphql-client.js";
-import { RECOMMENDED_BUSINESSES_QUERY } from "../queries.js";
 import { formatBusinessList } from "../formatters.js";
-import { resolveLocation } from "../geocode.js";
-import type { BusinessListItem } from "../types.js";
+import { findRecommendationsNear } from "../services/find-recommendations-near.js";
 
 const inputSchema = {
   locationQuery: z
@@ -46,31 +43,11 @@ export function registerFindRecommendationsNear(server: McpServer) {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async (args) => {
-      const { location, resolvedFrom, suggestedRadiusMeters } = await resolveLocation({
-        latitude: args.latitude,
-        longitude: args.longitude,
-        locationQuery: args.locationQuery,
-      });
-      const radiusMeters = args.radiusMeters ?? Math.max(suggestedRadiusMeters ?? 0, 1500);
-
-      const data = await gqlRequest<{
-        recommendedBusinesses: { total: number; edges: BusinessListItem[] };
-      }>(RECOMMENDED_BUSINESSES_QUERY, {
-        filter: {
-          center: location,
-          distance: radiusMeters,
-          open: args.openNow,
-        },
-        location,
-        pagination: { pageNumber: 0, pageSize: args.limit },
-      });
-
-      const radiusKm = (radiusMeters / 1000).toFixed(1).replace(".", ",");
-      const header = `Doporučené podniky do ${radiusKm} km od ${resolvedFrom}${args.openNow ? " (jen otevřené)" : ""} (${data.recommendedBusinesses.edges.length} z ${data.recommendedBusinesses.total})`;
+      const result = await findRecommendationsNear(args);
 
       return {
         content: [
-          { type: "text", text: formatBusinessList(data.recommendedBusinesses.edges, header) },
+          { type: "text", text: formatBusinessList(result.businesses, result.header) },
         ],
       };
     },

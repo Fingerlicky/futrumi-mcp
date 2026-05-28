@@ -3,6 +3,7 @@ import type {
   BusinessListItem,
   ExpertDetail,
   ExpertListItem,
+  PhotoRef,
   RecommendationDetail,
   RecommendationListItem,
 } from "./types.js";
@@ -26,6 +27,24 @@ const formatOpeningHours = (hours: string | null | undefined): string => {
 
 const truncate = (text: string, max: number): string =>
   text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+
+const isShowablePhoto = (photo: PhotoRef | null | undefined): photo is PhotoRef =>
+  !!photo && photo.approved && photo.url.trim().length > 0;
+
+// Collect approved, non-empty photo URLs across the given groups, deduped while
+// preserving order (cover/main photo first).
+const collectPhotoUrls = (...groups: (PhotoRef | null | undefined)[][]): string[] => {
+  const seen = new Set<string>();
+  for (const group of groups) {
+    for (const photo of group) {
+      if (isShowablePhoto(photo)) seen.add(photo.url);
+    }
+  }
+  return [...seen];
+};
+
+const photoLinks = (urls: string[]): string =>
+  urls.map((url, i) => `[${i + 1}](${url})`).join(", ");
 
 export function formatRecommendationCard(rec: RecommendationListItem, index: number): string {
   const distance = formatDistance(rec.distance);
@@ -71,6 +90,7 @@ export function formatBusinessCard(biz: BusinessListItem, index: number): string
     meta && `*${meta}*`,
     biz.bio && truncate(biz.bio.trim(), 200),
     `Adresa: ${biz.address}`,
+    isShowablePhoto(biz.photoUrl) && `Foto: ${biz.photoUrl.url}`,
     `[Otevřít v appce](${businessDeeplink(biz.id)}) · id: \`${biz.id}\``,
   ]
     .filter(Boolean)
@@ -107,8 +127,17 @@ export function formatRecommendationDetail(rec: RecommendationDetail): string {
     lines.push("");
     lines.push(`## Doporučená jídla`);
     for (const meal of rec.meals) {
-      lines.push(`- **${meal.name}** — ${meal.description.trim()}`);
+      const photos = collectPhotoUrls(meal.photos ?? []);
+      const photoSuffix = photos.length ? ` — fotky: ${photoLinks(photos)}` : "";
+      lines.push(`- **${meal.name}** — ${meal.description.trim()}${photoSuffix}`);
     }
+  }
+
+  const otherPhotos = collectPhotoUrls(rec.photosWithoutMeal ?? []);
+  if (otherPhotos.length) {
+    lines.push("");
+    lines.push(`## Další fotky`);
+    lines.push(photoLinks(otherPhotos));
   }
 
   lines.push("");
@@ -146,6 +175,36 @@ export function formatBusinessDetail(biz: BusinessDetail): string {
   if (links.length) {
     lines.push("");
     lines.push(links.join(" · "));
+  }
+
+  const venuePhotos = collectPhotoUrls(
+    [biz.coverPhotoUrl, biz.photoUrl],
+    biz.photos ?? [],
+  );
+  const mealPhotosByName = new Map<string, PhotoRef[]>();
+  const expertPhotoRefs: PhotoRef[] = [];
+  for (const rec of biz.recommendations) {
+    for (const meal of rec.meals) {
+      if (!meal.photos?.length) continue;
+      const acc = mealPhotosByName.get(meal.name) ?? [];
+      acc.push(...meal.photos);
+      mealPhotosByName.set(meal.name, acc);
+    }
+    expertPhotoRefs.push(...(rec.photosWithoutMeal ?? []));
+  }
+  const mealPhotoLines = [...mealPhotosByName]
+    .map(([name, refs]) => ({ name, urls: collectPhotoUrls(refs) }))
+    .filter((m) => m.urls.length > 0);
+  const expertPhotos = collectPhotoUrls(expertPhotoRefs);
+
+  if (venuePhotos.length || mealPhotoLines.length || expertPhotos.length) {
+    lines.push("");
+    lines.push(`## Fotky`);
+    if (venuePhotos.length) lines.push(`Podnik: ${photoLinks(venuePhotos)}`);
+    for (const meal of mealPhotoLines) {
+      lines.push(`${meal.name}: ${photoLinks(meal.urls)}`);
+    }
+    if (expertPhotos.length) lines.push(`Další od expertů: ${photoLinks(expertPhotos)}`);
   }
 
   if (biz.featuredQuotes.length) {
