@@ -1,6 +1,7 @@
 import { businessDeeplink } from "../formatters.js";
 import { searchRecommendations } from "../services/search-recommendations.js";
 import type { RecommendationListItem } from "../types.js";
+import type { ConversationTurn } from "./conversation-store.js";
 import { answerWithOpenAI, canUseOpenAI } from "./openai-decision-engine.js";
 
 const LOCATION_PATTERNS = [
@@ -25,6 +26,8 @@ export interface ConciergeRequest {
   radiusMeters?: number;
   limit?: number;
   useLlm?: boolean;
+  /** Recent conversation turns (oldest-first), used only by the LLM path for follow-up context. */
+  history?: ConversationTurn[];
 }
 
 const truncate = (text: string, max: number): string =>

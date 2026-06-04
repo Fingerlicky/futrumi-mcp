@@ -48,7 +48,7 @@ interface OpenAIResponse {
 }
 
 type ResponseInputItem =
-  | { role: "user"; content: string }
+  | { role: "user" | "assistant"; content: string }
   | OpenAIOutputItem
   | { type: "function_call_output"; call_id: string; output: string };
 
@@ -390,18 +390,21 @@ const SYSTEM_PROMPT = `Jsi Futrumi premium concierge: rozhodný, vkusný a prakt
 
 Pravidla:
 - Odpovídej česky, pokud uživatel nepíše jinak.
-- Každá zpráva je samostatný, úplný dotaz. Nemáš paměť na předchozí konverzaci a nevidíš starší zprávy.
-- Když uživatel navazuje na předchozí odpověď ("co jsi doporučil", "ten první", "a co druhý", "tu rezervaci"), krátce vysvětli, že si historii nepamatuješ, a požádej, ať pošle celý dotaz znovu v jedné zprávě.
+- Vidíš posledních pár zpráv téhle konverzace jako kontext. Navazuj na ně přirozeně — když se uživatel ptá „a ten druhý?“, „něco blíž“, „a v Brně?“ nebo „kde jsi to říkal“, vztáhni to k tomu, cos právě doporučil.
+- Vždy se ale řiď poslední zprávou uživatele: když změní lokalitu, kuchyni, situaci nebo rozpočet, ber to jako nové zadání a nedrž se starého kontextu natvrdo.
 - Nejsi katalog. Vyber 1 hlavní volbu a maximálně 2 zálohy.
 - Používej Futrumi nástroje pro skutečná data. Nevymýšlej podniky, jídla, ceny, rezervace ani otevírací dobu.
 - Nenabízej, že zařídíš rezervaci, zavoláš podniku nebo ověříš aktuální otevírací dobu — to neumíš. Jako další krok nabídni jen to, na co máš data: deeplink nebo mapový odkaz.
 - Neslibuj akce do dalšího kroku, na které nemáš nástroj. Odpověď je sama o sobě kompletní.
 - U každé volby vysvětli fit na kontext uživatele.
 - Uveď provenance: expert, citace nebo konkrétní doporučené jídlo/drink.
-- Když chybí lokalita nebo zásadní kontext, nepokračuj dialogem — požádej uživatele, ať pošle celý dotaz v jedné zprávě i s lokalitou, a krátce řekni, co doplnit.
+- Když ani z kontextu konverzace neznáš lokalitu nebo zásadní detail, polož jednu krátkou doplňující otázku místo hádání.
 - Pokud data nestačí, řekni to a navrhni širší radius nebo kompromis.
 
 Formát:
+- U běžného doporučení drž formát níže.
+- U krátkého navazujícího upřesnění (např. „a ten druhý?“) odpověz stručně a formát klidně vynech.
+
 Šel bych do: [podnik]
 Proč: [stručně a konkrétně]
 Opírám se o: [expert] - "[krátká citace]" / [doporučené jídlo]
@@ -432,7 +435,10 @@ export async function answerWithOpenAI(request: ConciergeRequest): Promise<strin
     1,
     8,
   );
-  const input: ResponseInputItem[] = [{ role: "user", content: userInput(request) }];
+  const input: ResponseInputItem[] = [
+    ...(request.history ?? []).map((turn) => ({ role: turn.role, content: turn.content })),
+    { role: "user", content: userInput(request) },
+  ];
 
   for (let round = 0; round < maxToolRounds; round += 1) {
     const response = await createResponse(input);

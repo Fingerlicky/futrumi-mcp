@@ -1,6 +1,7 @@
 import "../env.js";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { appendTurns, clearConversation, loadHistory } from "./conversation-store.js";
 import { answerConciergeRequest } from "./decision-engine.js";
 
 interface TelegramUser {
@@ -211,7 +212,7 @@ function helpText(): string {
     "Příkazy:",
     "`/help` - nápověda",
     "`/whoami` - zobrazí tvoje Telegram user id",
-    "`/reset` - reset lokálního chat stavu",
+    "`/reset` - zapomene kontext naší konverzace",
   ].join("\n");
 }
 
@@ -230,9 +231,10 @@ async function handleCommand(
     return true;
   }
   if (command === "/reset") {
+    clearConversation(message.chat.id);
     await client.sendMessage(
       message.chat.id,
-      "Reset hotový. Zatím nemám dlouhodobou konverzační paměť, takže není co mazat.",
+      "Hotovo, zapomněl jsem kontext naší konverzace. Další zpráva začíná načisto.",
     );
     return true;
   }
@@ -282,13 +284,16 @@ async function handleMessage(
 
   try {
     await client.sendTyping(message.chat.id);
-    const answer = await answerConciergeRequest({ message: text });
+    const history = loadHistory(message.chat.id);
+    const answer = await answerConciergeRequest({ message: text, history });
     await client.sendMessage(message.chat.id, answer);
+    appendTurns(message.chat.id, text, answer);
     appendLog("telegram_response", {
       userId,
       user: userLabel(message.from),
       messageId: message.message_id,
       answerLength: answer.length,
+      historyTurns: history.length,
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
