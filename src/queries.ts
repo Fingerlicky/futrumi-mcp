@@ -36,6 +36,18 @@ export const RECOMMENDATIONS_QUERY = /* GraphQL */ `
           id
           name
         }
+        mentions {
+          id
+          phrase
+          targetType
+          targetId
+          targetBusiness {
+            name
+          }
+          targetExpert {
+            name
+          }
+        }
       }
     }
   }
@@ -115,6 +127,18 @@ export const RECOMMENDATION_QUERY = /* GraphQL */ `
           approved
         }
       }
+      mentions {
+        id
+        phrase
+        targetType
+        targetId
+        targetBusiness {
+          name
+        }
+        targetExpert {
+          name
+        }
+      }
     }
   }
 `;
@@ -186,6 +210,18 @@ export const BUSINESS_QUERY = /* GraphQL */ `
           photos {
             url
             approved
+          }
+        }
+        mentions {
+          id
+          phrase
+          targetType
+          targetId
+          targetBusiness {
+            name
+          }
+          targetExpert {
+            name
           }
         }
       }

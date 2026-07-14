@@ -3,6 +3,7 @@ import type {
   BusinessListItem,
   ExpertDetail,
   ExpertListItem,
+  MentionRef,
   PhotoRef,
   RecommendationDetail,
   RecommendationListItem,
@@ -46,6 +47,18 @@ const collectPhotoUrls = (...groups: (PhotoRef | null | undefined)[][]): string[
 const photoLinks = (urls: string[]): string =>
   urls.map((url, i) => `[${i + 1}](${url})`).join(", ");
 
+// Mentions link a phrase inside `description` to another business/expert.
+// Surface them as "phrase → target" so the model can follow up with
+// get_business/get_expert without re-parsing the description text.
+const formatMentionsLine = (mentions: MentionRef[]): string => {
+  if (mentions.length === 0) return "";
+  const items = mentions.map((m) => {
+    const target = m.targetBusiness?.name ?? m.targetExpert?.name ?? m.targetId;
+    return `"${m.phrase}" → ${target}`;
+  });
+  return `Zmínky v textu: ${items.join(", ")}`;
+};
+
 export function formatRecommendationCard(rec: RecommendationListItem, index: number): string {
   const distance = formatDistance(rec.distance);
   const status = formatOpeningHours(rec.business.openingHours);
@@ -57,6 +70,7 @@ export function formatRecommendationCard(rec: RecommendationListItem, index: num
   const mealLine = rec.meals.length
     ? `Doporučená jídla: ${rec.meals.map((m) => m.name).join(", ")}`
     : "";
+  const mentionsLine = formatMentionsLine(rec.mentions);
 
   return [
     headline,
@@ -64,6 +78,7 @@ export function formatRecommendationCard(rec: RecommendationListItem, index: num
     quote,
     `Adresa: ${rec.business.address}`,
     mealLine,
+    mentionsLine,
     `[Otevřít v appce](${businessDeeplink(rec.business.id)}) · id: \`${rec.business.id}\` · rec: \`${rec.id}\``,
   ]
     .filter(Boolean)
@@ -122,6 +137,12 @@ export function formatRecommendationDetail(rec: RecommendationDetail): string {
   if (rec.strongQuote) lines.push(`> "${rec.strongQuote.trim()}"\n> — **${rec.expert.name}**`);
   lines.push("");
   lines.push(rec.description.trim());
+
+  const mentionsLine = formatMentionsLine(rec.mentions);
+  if (mentionsLine) {
+    lines.push("");
+    lines.push(mentionsLine);
+  }
 
   if (rec.meals.length) {
     lines.push("");
@@ -228,6 +249,8 @@ export function formatBusinessDetail(biz: BusinessDetail): string {
       if (rec.meals.length) {
         lines.push(`Doporučená jídla: ${rec.meals.map((m) => m.name).join(", ")}`);
       }
+      const recMentionsLine = formatMentionsLine(rec.mentions);
+      if (recMentionsLine) lines.push(recMentionsLine);
       lines.push(`rec id: \`${rec.id}\``);
     }
   }
@@ -264,6 +287,8 @@ export function formatExpertDetail(
       if (rec.meals.length) {
         lines.push(`Doporučená jídla: ${rec.meals.map((m) => m.name).join(", ")}`);
       }
+      const mentionsLine = formatMentionsLine(rec.mentions);
+      if (mentionsLine) lines.push(mentionsLine);
       lines.push(
         `[Otevřít v appce](${businessDeeplink(rec.business.id)}) · business id: \`${rec.business.id}\``,
       );
