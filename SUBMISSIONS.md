@@ -155,20 +155,24 @@ explicitně v popisu, jinak je globální dostupnost zavádějící.
 
 - **Kategorie.** Stejná past jako u Anthropicu: „Food & Drink" pravděpodobně v číselníku není.
   Nevymýšlet, vybrat z nabídky (nejblíž `Travel`), jinak se to bude opravovat mailem měsíc.
-- **Semantický ranking má dvě ověřené kolize** (diagnostikováno 14. 8. lokálním skórováním, ne
-  odhadem — `src/semantic-search.ts` je ruční lexikon, ne embeddingy):
+- **Semantický ranking měl dvě ověřené kolize — OPRAVENO 14. 8.** (diagnostikováno lokálním
+  skórováním, ne odhadem — `src/semantic-search.ts` je ruční lexikon, ne embeddingy):
   1. České **„o něm"** se po odstranění diakritiky rovná `nem` (vietnamský závitek) v konceptu
      `vietnamese`. Proto u dotazu „vietnamská pho / Praha 7" vyskočila francouzská Le Terroir —
      v jejím popisu je „vůbec se o něm nemluví". Zúženo bisekcí na jediné slovo.
   2. Koncept `wine-date` má term `vino`, který **prefixem matchuje „Vinohradská"** — takže dotaz
      „vinárna" vytáhne pekárnu jen podle adresy. Ověřeno A/B: stejná pekárna na Kodaňské neskóruje.
-  Společná příčina: koncepty se skórují proti **všem** polím včetně adresy a jména experta, a krátké
-  termy prefixují. Navržená oprava (bounded, ne přepis na embeddingy): nescórovat koncepty proti
-  adrese a jménu experta vůbec + krátké dvojznačné termy počítat jen v „jídelních" polích (jídla,
-  název, typ podniku). Není to blocker submitu, ale recenzent naše test prompty spouští, takže
-  do testovacích případů dávat jen dotazy s ověřeně těsnými výsledky.
+  Společná příčina: koncepty se skórovaly proti **všem** polím včetně adresy a jména experta, a
+  krátké termy prefixují. Oprava zavádí `FieldKind`: `food` (jídla, název, typ podniku — cokoli
+  projde), `prose` (citace, popis — jen termy od 4 znaků) a `meta` (adresa, jméno experta — koncepty
+  nikdy). Přímé matche na slova z dotazu zůstávají na všech polích, takže hledání podle ulice nebo
+  experta funguje dál. Ověřeno na produkčních datech: „pho / Praha" 3 → 2 podniky (vypadl
+  Le Terroir), „vinárna / Vinohrady" 26 → 25 (vypadl **APETIT**, vývařovna na Vinohradské 106),
+  „kavárna / Vinohrady" 20 → 20 bez změny. Plus 10 unit probe testů.
   Pozn.: BeerGeek Bar u dotazu „vinný bar na rande" **není** ukázka téhle vady — matchnul
-  legitimně na slovo „bar" v názvu.
+  legitimně na slovo „bar" v názvu. Co oprava vědomě neřeší: lexikon konceptu `wine-date`
+  obsahuje `bar`, `tapas` i `koktejl`, takže dotaz „vinárna" pořád vrací koktejlové bary. To je
+  volba lexikonu, ne kolize — na přesnější rozlišení by byly potřeba embeddingy.
 - **Doporučení bez textu.** ~6 % publikovaných doporučení nemá citaci ani popis. Prázdné
   blockquotes opraveny 14. 8. (commit `b613744`), ale u takového tipu se vrací jen jméno
   experta — recenzent to může vnímat jako prázdný obsah. Pokud to vyskočí v reviewu, řešení je
