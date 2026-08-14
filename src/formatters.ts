@@ -59,14 +59,26 @@ const formatMentionsLine = (mentions: MentionRef[]): string => {
   return `Zmínky v textu: ${items.join(", ")}`;
 };
 
+// Roughly 6 % of published recommendations have neither a strong quote nor a
+// description, so the quote line has to be droppable — otherwise the card
+// renders a blockquote marker with nothing behind it.
+const formatQuoteLine = (
+  rec: { strongQuote: string | null; description: string },
+  maxLength: number,
+  attribution?: string,
+): string => {
+  const strongQuote = rec.strongQuote?.trim();
+  const body = strongQuote ? `"${strongQuote}"` : truncate(rec.description.trim(), maxLength);
+  if (!body) return "";
+  return attribution ? `> ${body} — **${attribution}**` : `> ${body}`;
+};
+
 export function formatRecommendationCard(rec: RecommendationListItem, index: number): string {
   const distance = formatDistance(rec.distance);
   const status = formatOpeningHours(rec.business.openingHours);
   const meta = [distance, status].filter(Boolean).join(" · ");
   const headline = `### ${index + 1}. **${rec.business.name}** — ${rec.business.primaryBusinessType.name}`;
-  const quote = rec.strongQuote
-    ? `> "${rec.strongQuote.trim()}" — **${rec.expert.name}**`
-    : `> ${truncate(rec.description.trim(), 220)} — **${rec.expert.name}**`;
+  const quote = formatQuoteLine(rec, 220, rec.expert.name);
   const mealLine = rec.meals.length
     ? `Doporučená jídla: ${rec.meals.map((m) => m.name).join(", ")}`
     : "";
@@ -133,10 +145,16 @@ export function formatRecommendationDetail(rec: RecommendationDetail): string {
   lines.push("");
   lines.push(`**Adresa:** ${rec.business.address}`);
   if (rec.publishDate) lines.push(`**Publikováno:** ${new Date(rec.publishDate).toLocaleDateString("cs-CZ")}`);
-  lines.push("");
-  if (rec.strongQuote) lines.push(`> "${rec.strongQuote.trim()}"\n> — **${rec.expert.name}**`);
-  lines.push("");
-  lines.push(rec.description.trim());
+  const strongQuote = rec.strongQuote?.trim();
+  if (strongQuote) {
+    lines.push("");
+    lines.push(`> "${strongQuote}"\n> — **${rec.expert.name}**`);
+  }
+  const description = rec.description.trim();
+  if (description) {
+    lines.push("");
+    lines.push(description);
+  }
 
   const mentionsLine = formatMentionsLine(rec.mentions);
   if (mentionsLine) {
@@ -181,9 +199,10 @@ export function formatBusinessDetail(biz: BusinessDetail): string {
   lines.push(`*${meta}*`);
   lines.push("");
   lines.push(`**Adresa:** ${biz.address}`);
-  if (biz.bio) {
+  const bio = biz.bio?.trim();
+  if (bio) {
     lines.push("");
-    lines.push(biz.bio.trim());
+    lines.push(bio);
   }
 
   const links: string[] = [];
@@ -232,7 +251,8 @@ export function formatBusinessDetail(biz: BusinessDetail): string {
     lines.push("");
     lines.push(`## Co o podniku říkají experti`);
     for (const q of biz.featuredQuotes) {
-      lines.push(`> "${q.text.trim()}"`);
+      const text = q.text.trim();
+      if (text) lines.push(`> "${text}"`);
     }
   }
 
@@ -240,12 +260,10 @@ export function formatBusinessDetail(biz: BusinessDetail): string {
     lines.push("");
     lines.push(`## Expertní doporučení (${biz.recommendations.length})`);
     for (const rec of biz.recommendations) {
-      const headline = rec.strongQuote
-        ? `> "${rec.strongQuote.trim()}"`
-        : `> ${truncate(rec.description.trim(), 180)}`;
+      const quote = formatQuoteLine(rec, 180);
       lines.push("");
       lines.push(`### ${rec.expert.name}`);
-      lines.push(headline);
+      if (quote) lines.push(quote);
       if (rec.meals.length) {
         lines.push(`Doporučená jídla: ${rec.meals.map((m) => m.name).join(", ")}`);
       }
@@ -268,9 +286,10 @@ export function formatExpertDetail(
   const lines: string[] = [];
   lines.push(`# ${expert.name}`);
   lines.push(`*${expert.recommendationCount} doporučení celkem*`);
-  if (expert.bio) {
+  const bio = expert.bio?.trim();
+  if (bio) {
     lines.push("");
-    lines.push(expert.bio.trim());
+    lines.push(bio);
   }
 
   if (recommendations.length) {
@@ -280,10 +299,8 @@ export function formatExpertDetail(
       lines.push("");
       lines.push(`### ${rec.business.name} — ${rec.business.primaryBusinessType.name}`);
       lines.push(`*${rec.business.address}*`);
-      const quote = rec.strongQuote
-        ? `> "${rec.strongQuote.trim()}"`
-        : `> ${truncate(rec.description.trim(), 180)}`;
-      lines.push(quote);
+      const quote = formatQuoteLine(rec, 180);
+      if (quote) lines.push(quote);
       if (rec.meals.length) {
         lines.push(`Doporučená jídla: ${rec.meals.map((m) => m.name).join(", ")}`);
       }
@@ -310,7 +327,8 @@ export function formatExpertList(experts: ExpertListItem[], total: number): stri
   for (const e of experts) {
     lines.push("");
     lines.push(`### ${e.name} — ${e.recommendationCount} doporučení`);
-    if (e.bio) lines.push(truncate(e.bio.trim(), 200));
+    const bio = e.bio?.trim();
+    if (bio) lines.push(truncate(bio, 200));
     lines.push(`expert id: \`${e.id}\``);
   }
   return lines.join("\n");
