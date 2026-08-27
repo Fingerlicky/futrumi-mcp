@@ -80,13 +80,17 @@ rejection"*, takže tohle je splněné a nemá se na to sahat.
 
 ## Testing tab — 5 pozitivních případů
 
-Všechny výstupy níže jsou **reálně ověřené proti produkci 14. 8. 2026**, ne vymyšlené.
+Všechny výstupy níže jsou **reálně ověřené proti produkci**, ne vymyšlené. Případy 1 a 4
+přeověřeny 28. 8. po opravě stránkování kandidátů, zbytek platí z 14. 8.
 
 1. **Prompt:** „Najdi mi vinný bar na rande na Vinohradech."
    **Tool:** `search_recommendations(query="vinný bar na rande", locationQuery="Praha Vinohrady")`
-   **Výsledek:** 5 tipů ze 120 kandidátů — Café Bar Pilotů (955 m, citace Daniela Juráše
-   „Jeden z nejlepších koktejlových barů v Praze"), Aprés bar, Bukowski's Bar, BeerGeek Bar,
-   Střecha Radost. Každý s citací experta, adresou, otevírací dobou a deep linkem.
+   **Výsledek:** 5 tipů ze 138 kandidátů — Café Bar Pilotů (955 m, citace Daniela Juráše
+   „Jeden z nejlepších koktejlových barů v Praze"), Aprés bar, **Fajnšmekr** („Milý sousedský
+   vinný bar", Petr Židek), Bukowski's Bar, EMA espresso bar. Každý s citací experta, adresou,
+   otevírací dobou a deep linkem. Odezva 0,7 s.
+   Pozn.: Fajnšmekr — jediný skutečný *vinný* bar v té pětici — se sem dostal až po opravě
+   stránkování 27. 8.; předtím se do okna 120 kandidátů nevešel.
 
 2. **Prompt:** „Co dobrého je kolem centra Brna?"
    **Tool:** `find_recommendations_near(locationQuery="Brno-střed")`
@@ -100,8 +104,13 @@ Všechny výstupy níže jsou **reálně ověřené proti produkci 14. 8. 2026**
 
 4. **Prompt:** „Kde má dobré pho v Praze 7?"
    **Tool:** `search_recommendations(query="vietnamská pho", locationQuery="Praha 7")`
-   **Výsledek:** Tràng An (765 m) s citací Marka Jeliče „Nejlepší Phở, stále stejné jako
-   15 let zpátky" a doporučeným jídlem Phở.
+   **Výsledek:** 2 tipy ze 186 kandidátů, odezva 1,3 s. První je Tràng An (765 m) s citací
+   Marka Jeliče „Nejlepší Phở, stále stejné jako 15 let zpátky" a doporučeným jídlem Phở.
+   Druhý je Sandwich Rodeo — **falešný poplach, který ale ukazuje mez lexikonu**: v popisu stojí
+   „oni dělají s jinou zemí to, co my děláme s Vietnamem" (mluví vietnamský restauratér o cizím
+   podniku). Slovo „Vietnamem" tam skutečně je, špatná je až inference. Tohle nespraví žádný
+   lexikon, chtělo by to embeddingy — a je to důvod, proč tenhle prompt reportovat jako
+   „první výsledek je správný", ne jako čistou dvojici.
 
 5. **Prompt:** „Kdo je Adam Huml a co doporučuje?"
    **Tool:** `list_experts` → `get_expert(expert_id="0dce1cc6-dc70-4743-9207-1fdeb9bd3dec")`
