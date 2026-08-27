@@ -18,17 +18,19 @@ export interface PhotoRef {
   approved: boolean;
 }
 
+// `photoUrl` is only selected where a photo is actually rendered — the
+// recommendation list query leaves it out to keep large candidate pages small.
 export interface ExpertRef {
   id: string;
   name: string;
-  photoUrl: { url: string } | null;
+  photoUrl?: { url: string } | null;
 }
 
 export interface BusinessRef {
   id: string;
   name: string;
   address: string;
-  location: Location | null;
+  location?: Location | null;
   primaryBusinessType: BusinessTypeRef;
   openingHours: string;
 }

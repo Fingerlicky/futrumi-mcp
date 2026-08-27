@@ -153,6 +153,15 @@ explicitně v popisu, jinak je globální dostupnost zavádějící.
 
 ## Známá rizika před submitem
 
+- **Okno kandidátů — OPRAVENO 27. 8.** Backend vrací doporučení podle vzdálenosti a rankovala se
+  jen první stránka (120 z 564), takže **širší radius dával horší výsledky**: restaurace jménem
+  „PHO 100" u dotazu „pho" vypadla, když se radius zvětšil z 3 na 8 km. Semantický dotaz teď
+  stránkuje celý rozsah (strop 600, stránky po 200 paralelně) a z `RECOMMENDATIONS_QUERY` jsou
+  vyhozená nepoužívaná pole (`expert.photoUrl`, `business.location`). Efekt: „pho / Praha 15 km"
+  1 → 9 podniků, „ramen / Brno" 2 → 5. Latence semantického dotazu roste z ~0,8 s na ~1,6–2,1 s
+  u velkých poolů; menší dotazy zůstávají pod sekundou. Test case 4 v Testing tabu držel jen díky
+  2km radiusu — po opravě obstojí i přeformulovaný prompt typu „where to eat pho in Prague".
+
 - **Kategorie.** Stejná past jako u Anthropicu: „Food & Drink" pravděpodobně v číselníku není.
   Nevymýšlet, vybrat z nabídky (nejblíž `Travel`), jinak se to bude opravovat mailem měsíc.
 - **Semantický ranking měl dvě ověřené kolize — OPRAVENO 14. 8.** (diagnostikováno lokálním

@@ -14,18 +14,11 @@ export const RECOMMENDATIONS_QUERY = /* GraphQL */ `
         expert {
           id
           name
-          photoUrl {
-            url
-          }
         }
         business {
           id
           name
           address
-          location {
-            latitude
-            longitude
-          }
           primaryBusinessType {
             id
             name
