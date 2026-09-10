@@ -1,13 +1,18 @@
 import type { FunctionTool } from "openai/resources/live/live";
 
-import { businessDeeplink } from "../formatters.js";
+import { businessDeeplink, expertDeeplink } from "../formatters.js";
 import { findRecommendationsNear } from "../services/find-recommendations-near.js";
 import { getBusiness } from "../services/get-business.js";
+import { getExpert } from "../services/get-expert.js";
 import { getRecommendation } from "../services/get-recommendation.js";
+import { listExperts } from "../services/list-experts.js";
 import { searchRecommendations } from "../services/search-recommendations.js";
 import type {
   BusinessDetail,
   BusinessListItem,
+  ExpertDetail,
+  ExpertListItem,
+  Location,
   NestedRecommendation,
   RecommendationDetail,
   RecommendationListItem,
@@ -30,11 +35,20 @@ export interface KnownBusiness {
   expert: string | null;
   quote: string | null;
   deeplink: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+export interface KnownExpert {
+  expert_id: string;
+  name: string;
+  deeplink: string;
 }
 
 export interface ToolRun {
   payload: JsonRecord;
   businesses: KnownBusiness[];
+  experts?: KnownExpert[];
 }
 
 export interface PresentedChoice extends KnownBusiness {
@@ -44,6 +58,13 @@ export interface PresentedChoice extends KnownBusiness {
 export interface PresentChoicesPayload {
   ok: true;
   shown: PresentedChoice[];
+}
+
+/** Shape served by GET /live/session/:id/choices — the iOS/web client contract. */
+export interface ChoicesSnapshot {
+  primary: PresentedChoice;
+  backups: PresentedChoice[];
+  presented_at: string;
 }
 
 export interface UnknownIdsPayload {
@@ -96,7 +117,7 @@ export const DATA_TOOLS: FunctionTool[] = [
     type: "function",
     name: "get_business",
     description:
-      "Get full Futrumi detail for one business, including links, featured quotes, and all expert recommendations.",
+      "Get full Futrumi detail for one business, including links, featured quotes, and all expert recommendations. Použij vždy, když se uživatel ptá, kdo podnik doporučuje, co si tam dát, kde to je nebo kdy mají otevřeno.",
     strict: false,
     parameters: {
       type: "object",
@@ -121,6 +142,53 @@ export const DATA_TOOLS: FunctionTool[] = [
         recommendation_id: { type: "string" },
       },
       required: ["recommendation_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "get_expert",
+    description:
+      "Detail jednoho experta Futrumi (jméno, bio, počet doporučení) a jeho doporučené podniky. Použij, když se uživatel ptá na konkrétního experta nebo chce vědět, kam chodí. Znáš-li jen jméno, nejdřív zavolej list_experts a najdi jeho ID.",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        expert_id: { type: "string", description: "Futrumi expert ID from a tool result." },
+        limit: { type: "integer", minimum: 1, maximum: 20 },
+      },
+      required: ["expert_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "list_experts",
+    description:
+      "Seznam expertů Futrumi se jménem, bio a počtem doporučení. Použij na dotaz „kdo je <jméno>“ nebo „jaké máte experty“: najdi experta podle jména a pak zavolej get_expert s jeho ID. Nikdy jméno experta nehádej z paměti.",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        pageNumber: { type: "integer", minimum: 0 },
+        pageSize: { type: "integer", minimum: 1, maximum: 50 },
+      },
+      additionalProperties: false,
+    },
+  },
+];
+
+/** Answered from live-session state, not from the Futrumi API. */
+export const SESSION_TOOLS: FunctionTool[] = [
+  {
+    type: "function",
+    name: "get_screen_context",
+    description:
+      "Vrátí, co má uživatel právě na obrazovce aplikace (otevřený podnik nebo expert). Zavolej, když uživatel mluví o „tomhle podniku“, „tady“ nebo „co si tu dát“ a nevíš, k čemu to vztáhnout.",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {},
       additionalProperties: false,
     },
   },
@@ -171,11 +239,41 @@ export const APP_TOOLS: FunctionTool[] = [
       additionalProperties: false,
     },
   },
+  {
+    type: "function",
+    name: "open_expert",
+    description: "Zavolej, když uživatel chce otevřít nebo zobrazit experta (jeho profil v aplikaci).",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        expert_id: { type: "string", description: "Futrumi expert ID from a tool result." },
+      },
+      required: ["expert_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "show_on_map",
+    description:
+      "Zavolej, když uživatel chce podnik vidět na mapě nebo se ptá, kde to je. Aplikace na mapu odscrolluje sama.",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        business_id: { type: "string", description: "Futrumi business ID from a tool result." },
+      },
+      required: ["business_id"],
+      additionalProperties: false,
+    },
+  },
 ];
 
-export const LIVE_TOOLS: FunctionTool[] = [...DATA_TOOLS, ...APP_TOOLS];
+export const LIVE_TOOLS: FunctionTool[] = [...DATA_TOOLS, ...SESSION_TOOLS, ...APP_TOOLS];
 
 export const DATA_TOOL_NAMES = new Set(DATA_TOOLS.map((tool) => tool.name));
+export const SESSION_TOOL_NAMES = new Set(SESSION_TOOLS.map((tool) => tool.name));
 export const APP_TOOL_NAMES = new Set(APP_TOOLS.map((tool) => tool.name));
 
 const truncate = (text: string | null | undefined, max: number): string | null => {
@@ -188,6 +286,13 @@ const clamp = (value: number | undefined, fallback: number, min: number, max: nu
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(value)));
 };
+
+function coordsOf(location: Location | null | undefined): { latitude: number; longitude: number } | JsonRecord {
+  if (!location) return {};
+  const { latitude, longitude } = location;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return {};
+  return { latitude, longitude };
+}
 
 export function parseArgs(raw: string): JsonRecord {
   try {
@@ -313,6 +418,25 @@ function compactRecommendationDetail(rec: RecommendationDetail): JsonRecord {
   };
 }
 
+function compactExpertDetail(expert: ExpertDetail): JsonRecord {
+  return {
+    expert_id: expert.id,
+    name: expert.name,
+    bio: truncate(expert.bio, 400),
+    recommendationCount: expert.recommendationCount,
+    deeplink: expertDeeplink(expert.id),
+  };
+}
+
+function compactExpertListItem(expert: ExpertListItem): JsonRecord {
+  return {
+    expert_id: expert.id,
+    name: expert.name,
+    bio: truncate(expert.bio, 160),
+    recommendationCount: expert.recommendationCount,
+  };
+}
+
 function knownFromRecommendation(rec: RecommendationListItem): KnownBusiness {
   return {
     business_id: rec.business.id,
@@ -320,6 +444,7 @@ function knownFromRecommendation(rec: RecommendationListItem): KnownBusiness {
     expert: rec.expert.name,
     quote: truncate(rec.strongQuote, 200) ?? truncate(rec.description, 200),
     deeplink: businessDeeplink(rec.business.id),
+    ...coordsOf(rec.business.location),
   };
 }
 
@@ -330,6 +455,7 @@ function knownFromBusinessListItem(business: BusinessListItem): KnownBusiness {
     expert: null,
     quote: truncate(business.bio, 200),
     deeplink: businessDeeplink(business.id),
+    ...coordsOf(business.location),
   };
 }
 
@@ -345,6 +471,7 @@ function knownFromBusinessDetail(business: BusinessDetail): KnownBusiness {
     expert: first?.expert.name ?? null,
     quote,
     deeplink: businessDeeplink(business.id),
+    ...coordsOf(business.location),
   };
 }
 
@@ -355,7 +482,12 @@ function knownFromRecommendationDetail(rec: RecommendationDetail): KnownBusiness
     expert: rec.expert.name,
     quote: truncate(rec.strongQuote, 200) ?? truncate(rec.description, 200),
     deeplink: businessDeeplink(rec.business.id),
+    ...coordsOf(rec.business.location),
   };
+}
+
+function knownExpertRef(expert: { id: string; name: string }): KnownExpert {
+  return { expert_id: expert.id, name: expert.name, deeplink: expertDeeplink(expert.id) };
 }
 
 function defaultLocationArgs(args: JsonRecord, context: ToolContext): JsonRecord {
@@ -389,6 +521,7 @@ export async function runTool(name: string, rawArgs: string, context: ToolContex
           recommendations: result.recommendations.map(compactRecommendation),
         },
         businesses: result.recommendations.map(knownFromRecommendation),
+        experts: result.recommendations.map((rec) => knownExpertRef(rec.expert)),
       };
     }
     case "find_recommendations_near": {
@@ -421,6 +554,7 @@ export async function runTool(name: string, rawArgs: string, context: ToolContex
       return {
         payload: { business: compactBusinessDetail(business) },
         businesses: [knownFromBusinessDetail(business)],
+        experts: business.recommendations.map((rec) => knownExpertRef(rec.expert)),
       };
     }
     case "get_recommendation": {
@@ -430,6 +564,37 @@ export async function runTool(name: string, rawArgs: string, context: ToolContex
       return {
         payload: { recommendation: compactRecommendationDetail(recommendation) },
         businesses: [knownFromRecommendationDetail(recommendation)],
+        experts: [knownExpertRef(recommendation.expert)],
+      };
+    }
+    case "get_expert": {
+      const expertId = stringArg(parsedArgs, "expert_id");
+      if (!expertId) return { payload: { error: "Missing expert_id." }, businesses: [] };
+      const result = await getExpert({
+        expert_id: expertId,
+        limit: clamp(numberArg(parsedArgs, "limit"), 8, 1, 20),
+      });
+      return {
+        payload: {
+          expert: compactExpertDetail(result.expert),
+          recommendations: result.recommendations.map(compactRecommendation),
+        },
+        businesses: result.recommendations.map(knownFromRecommendation),
+        experts: [knownExpertRef(result.expert)],
+      };
+    }
+    case "list_experts": {
+      const result = await listExperts({
+        pageNumber: clamp(numberArg(parsedArgs, "pageNumber"), 0, 0, 200),
+        pageSize: clamp(numberArg(parsedArgs, "pageSize"), 20, 1, 50),
+      });
+      return {
+        payload: {
+          total: result.total,
+          experts: result.experts.map(compactExpertListItem),
+        },
+        businesses: [],
+        experts: result.experts.map(knownExpertRef),
       };
     }
     default:
@@ -451,10 +616,41 @@ function readChoice(value: unknown): RawChoice | null {
   return { business_id: id, reason };
 }
 
-export function presentChoices(
+function needsEnrichment(business: KnownBusiness | undefined): boolean {
+  if (!business) return false;
+  return !business.expert || typeof business.latitude !== "number";
+}
+
+/**
+ * Cards must name an expert even for backups, and the map needs coordinates, but
+ * find_recommendations_near returns neither — fill the gaps from the detail query.
+ */
+async function enrichKnown(ids: string[], known: Map<string, KnownBusiness>): Promise<void> {
+  const missing = ids.filter((id) => needsEnrichment(known.get(id)));
+  if (missing.length === 0) return;
+  await Promise.all(
+    missing.map(async (id) => {
+      try {
+        const detail = await getBusiness({ business_id: id });
+        const enriched = knownFromBusinessDetail(detail);
+        const current = known.get(id);
+        known.set(id, {
+          ...(current ?? {}),
+          ...enriched,
+          expert: enriched.expert ?? current?.expert ?? null,
+          quote: enriched.quote ?? current?.quote ?? null,
+        });
+      } catch {
+        // Keep the thinner known entry; cards still render without the expert line.
+      }
+    }),
+  );
+}
+
+export async function presentChoices(
   rawArgs: string,
   known: Map<string, KnownBusiness>,
-): PresentChoicesPayload | UnknownIdsPayload {
+): Promise<PresentChoicesPayload | UnknownIdsPayload> {
   const args = parseArgs(rawArgs);
   const backups = Array.isArray(args.backups) ? args.backups : [];
   const requested = [readChoice(args.primary), ...backups.map(readChoice)].filter(
@@ -470,6 +666,11 @@ export function presentChoices(
     };
   }
 
+  await enrichKnown(
+    requested.map((choice) => choice.business_id),
+    known,
+  );
+
   return {
     ok: true,
     shown: requested.map((choice) => ({
@@ -479,10 +680,16 @@ export function presentChoices(
   };
 }
 
+export function toChoicesSnapshot(shown: PresentedChoice[]): ChoicesSnapshot | null {
+  const [primary, ...backups] = shown;
+  if (!primary) return null;
+  return { primary, backups, presented_at: new Date().toISOString() };
+}
+
 export function openBusiness(
   rawArgs: string,
   known: Map<string, KnownBusiness>,
-): { ok: true; business_id: string; name: string } | UnknownIdsPayload {
+): { ok: true; handled_by: "app"; business_id: string; name: string } | UnknownIdsPayload {
   const args = parseArgs(rawArgs);
   const id = typeof args.business_id === "string" ? args.business_id.trim() : "";
   const match = id ? known.get(id) : undefined;
@@ -493,5 +700,73 @@ export function openBusiness(
       hint: "Neznámé business_id. Otevřít jde jen podnik, který už byl ve výsledcích nástrojů.",
     };
   }
-  return { ok: true, business_id: match.business_id, name: match.name };
+  return { ok: true, handled_by: "app", business_id: match.business_id, name: match.name };
+}
+
+export function openExpert(
+  rawArgs: string,
+  known: Map<string, KnownExpert>,
+):
+  | { ok: true; handled_by: "app"; expert_id: string; name: string; deeplink: string }
+  | UnknownIdsPayload {
+  const args = parseArgs(rawArgs);
+  const id = typeof args.expert_id === "string" ? args.expert_id.trim() : "";
+  const match = id ? known.get(id) : undefined;
+  if (!match) {
+    return {
+      ok: false,
+      unknown_ids: id ? [id] : [],
+      hint: "Neznámé expert_id. Zavolej nejdřív list_experts nebo get_expert a použij ID z výsledku.",
+    };
+  }
+  return { ok: true, handled_by: "app", ...match };
+}
+
+export interface ShowOnMapPayload {
+  ok: true;
+  handled_by: "app";
+  business: {
+    id: string;
+    name: string;
+    latitude: number | null;
+    longitude: number | null;
+  };
+}
+
+export async function showOnMap(
+  rawArgs: string,
+  known: Map<string, KnownBusiness>,
+): Promise<ShowOnMapPayload | UnknownIdsPayload> {
+  const args = parseArgs(rawArgs);
+  const id = typeof args.business_id === "string" ? args.business_id.trim() : "";
+  if (!id) {
+    return { ok: false, unknown_ids: [], hint: "Chybí business_id." };
+  }
+  let match = known.get(id);
+  if (!match || typeof match.latitude !== "number") {
+    try {
+      const detail = await getBusiness({ business_id: id });
+      match = { ...(match ?? {}), ...knownFromBusinessDetail(detail) };
+      known.set(id, match);
+    } catch {
+      // Fall through: an unknown ID with no detail cannot be shown on the map.
+    }
+  }
+  if (!match) {
+    return {
+      ok: false,
+      unknown_ids: [id],
+      hint: "Neznámé business_id. Na mapě jde ukázat jen podnik z výsledků nástrojů.",
+    };
+  }
+  return {
+    ok: true,
+    handled_by: "app",
+    business: {
+      id: match.business_id,
+      name: match.name,
+      latitude: typeof match.latitude === "number" ? match.latitude : null,
+      longitude: typeof match.longitude === "number" ? match.longitude : null,
+    },
+  };
 }

@@ -19,6 +19,10 @@ export const RECOMMENDATIONS_QUERY = /* GraphQL */ `
           id
           name
           address
+          location {
+            latitude
+            longitude
+          }
           primaryBusinessType {
             id
             name

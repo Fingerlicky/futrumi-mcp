@@ -111,6 +111,10 @@ export const DEMO_PAGE = `<!doctype html>
       <label class="checkbox"><input type="checkbox" id="useLocation" checked> použít mou polohu</label>
     </div>
     <div class="row">
+      <label for="accessCode">Přístupový kód</label>
+      <input type="text" id="accessCode" placeholder="přístupový kód (pokud ho server vyžaduje)" autocomplete="off">
+    </div>
+    <div class="row">
       <input type="text" id="placeHint" placeholder="nebo napiš místo (jen nápověda, co říct)">
     </div>
     <p class="hint">Hvězdička = nový hlas GPT-Live. Zkus: „Kam na dobrou kávu na Vinohradech?“ nebo „Co si dát na večeři v Karlíně?“</p>
@@ -140,6 +144,7 @@ const els = {
   start: document.getElementById("start"),
   stop: document.getElementById("stop"),
   useLocation: document.getElementById("useLocation"),
+  accessCode: document.getElementById("accessCode"),
   status: document.getElementById("status"),
   audio: document.getElementById("audio"),
   chat: document.getElementById("chat"),
@@ -163,7 +168,27 @@ let timerHandle = null;
 let startedAt = 0;
 const rawEvents = [];
 const openedCalls = new Set();
+let lastShown = [];
 let lastBubble = null;
+
+const ACCESS_CODE_KEY = "futrumi.live.accessCode";
+
+try {
+  const stored = localStorage.getItem(ACCESS_CODE_KEY);
+  if (stored) els.accessCode.value = stored;
+} catch (error) {
+  console.warn("localStorage unavailable", error);
+}
+
+els.accessCode.addEventListener("change", () => {
+  try { localStorage.setItem(ACCESS_CODE_KEY, els.accessCode.value.trim()); }
+  catch (error) { console.warn("localStorage write failed", error); }
+});
+
+function authHeaders() {
+  const code = els.accessCode.value.trim();
+  return code ? { "x-live-access-code": code } : {};
+}
 
 function setStatus(text, live) {
   els.status.textContent = text;
@@ -193,6 +218,7 @@ function appendTranscript(side, delta) {
 }
 
 function renderCards(shown) {
+  lastShown = shown;
   els.cards.replaceChildren();
   shown.forEach((choice, index) => {
     const card = document.createElement("div");
@@ -232,11 +258,21 @@ function renderCards(shown) {
     link.target = "_blank";
     link.rel = "noopener";
     link.textContent = "Otevřít na futrumi.cz";
+    const actions = document.createElement("div");
+    actions.append(link);
+    if (typeof choice.latitude === "number" && typeof choice.longitude === "number") {
+      const map = document.createElement("a");
+      map.href = "https://www.google.com/maps/search/?api=1&query=" + choice.latitude + "," + choice.longitude;
+      map.target = "_blank";
+      map.rel = "noopener";
+      map.textContent = "Mapa";
+      map.style.marginLeft = "10px";
+      actions.append(map);
+    }
     const say = document.createElement("span");
     say.className = "say";
     say.textContent = "nebo řekni „otevři to“";
-    const actions = document.createElement("div");
-    actions.append(link, say);
+    actions.append(say);
     card.append(actions);
 
     els.cards.append(card);
@@ -247,11 +283,13 @@ async function fetchChoices() {
   if (!sessionId) return;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      const response = await fetch("/live/session/" + encodeURIComponent(sessionId) + "/choices");
+      const response = await fetch("/live/session/" + encodeURIComponent(sessionId) + "/choices", {
+        headers: authHeaders(),
+      });
       if (response.ok) {
         const data = await response.json();
-        if (data.ok && Array.isArray(data.shown) && data.shown.length > 0) {
-          renderCards(data.shown);
+        if (data && data.primary) {
+          renderCards([data.primary].concat(Array.isArray(data.backups) ? data.backups : []));
           return;
         }
       }
@@ -274,16 +312,51 @@ function highlightAndOpen(businessId, callId) {
   window.open("https://futrumi.cz/business/" + businessId, "_blank", "noopener");
 }
 
+function openExpertProfile(expertId, callId) {
+  if (openedCalls.has(callId)) return;
+  openedCalls.add(callId);
+  window.open("https://futrumi.cz/expert/" + expertId, "_blank", "noopener");
+}
+
+async function showOnMap(businessId, callId) {
+  if (openedCalls.has(callId)) return;
+  openedCalls.add(callId);
+  const card = els.cards.querySelector('[data-business-id="' + businessId + '"]');
+  if (card) card.classList.add("opened");
+  let match = lastShown.find((item) => item.business_id === businessId);
+  if (!match) {
+    await fetchChoices();
+    match = lastShown.find((item) => item.business_id === businessId);
+  }
+  if (match && typeof match.latitude === "number" && typeof match.longitude === "number") {
+    window.open(
+      "https://www.google.com/maps/search/?api=1&query=" + match.latitude + "," + match.longitude,
+      "_blank",
+      "noopener",
+    );
+    return;
+  }
+  window.open("https://futrumi.cz/business/" + businessId, "_blank", "noopener");
+}
+
 function handleFunctionCall(item) {
   if (!item || item.type !== "function_call") return;
   if (item.name === "present_choices") {
     void fetchChoices();
     return;
   }
-  if (item.name === "open_business") {
-    let args = {};
-    try { args = JSON.parse(item.arguments || "{}"); } catch { args = {}; }
-    if (args.business_id) highlightAndOpen(args.business_id, item.call_id);
+  let args = {};
+  try { args = JSON.parse(item.arguments || "{}"); } catch { args = {}; }
+  if (item.name === "open_business" && args.business_id) {
+    highlightAndOpen(args.business_id, item.call_id);
+    return;
+  }
+  if (item.name === "open_expert" && args.expert_id) {
+    openExpertProfile(args.expert_id, item.call_id);
+    return;
+  }
+  if (item.name === "show_on_map" && args.business_id) {
+    void showOnMap(args.business_id, item.call_id);
   }
 }
 
@@ -385,6 +458,7 @@ els.start.addEventListener("click", async () => {
   els.start.disabled = true;
   finalized = false;
   openedCalls.clear();
+  lastShown = [];
   els.cards.replaceChildren();
   els.usage.textContent = "";
   setStatus("Připojuji…");
@@ -417,11 +491,12 @@ els.start.addEventListener("click", async () => {
 
     const response = await fetch("/live/session", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...authHeaders() },
       body: JSON.stringify({
         sdp,
         voice: els.voice.value,
         locale: navigator.language,
+        client: "web",
         ...(location ? { location } : {}),
       }),
     });

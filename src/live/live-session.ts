@@ -1,23 +1,35 @@
 import OpenAI from "openai";
 import type { LiveCreateResponse } from "openai/resources/live/live";
-import type { ConnectServerEvent } from "openai/resources/live/sideband/sideband";
+import type { ConnectClientEvent, ConnectServerEvent } from "openai/resources/live/sideband/sideband";
 import { SidebandWS } from "openai/resources/live/sideband/ws";
 
 import {
-  APP_TOOL_NAMES,
   DATA_TOOL_NAMES,
   openBusiness,
+  openExpert,
   presentChoices,
   runTool,
+  showOnMap,
+  toChoicesSnapshot,
+  type ChoicesSnapshot,
   type JsonRecord,
   type KnownBusiness,
-  type PresentChoicesPayload,
+  type KnownExpert,
   type ToolContext,
 } from "./tools.js";
-import { buildSessionConfig, type LiveClientContext } from "./session-config.js";
+import {
+  backendInstructionsWithScreen,
+  buildSessionConfig,
+  screenContextLine,
+  type LiveClientContext,
+} from "./session-config.js";
 
 const TRANSCRIPT_FLUSH_MS = 1500;
 const MAX_TOOL_OUTPUT_CHARS = 12000;
+const ACK_TIMEOUT_MS = 4000;
+const DEFAULT_MAX_SESSION_SECONDS = 600;
+
+export type ScreenContextTransport = "session.update" | "session.thinking.append";
 
 export class LiveSessionLimitError extends Error {
   constructor(readonly limit: number) {
@@ -29,6 +41,12 @@ interface PendingFunctionCall {
   callId: string;
   name: string;
   arguments: string;
+}
+
+interface PendingAck {
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
 }
 
 function asRecord(value: unknown): JsonRecord | null {
@@ -46,9 +64,17 @@ function readFunctionCall(event: ConnectServerEvent): PendingFunctionCall | null
   return { callId, name, arguments: typeof args === "string" ? args : "{}" };
 }
 
+function positiveIntEnv(name: string, fallback: number): number {
+  const parsed = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function maxSessions(): number {
-  const parsed = Number.parseInt(process.env.LIVE_MAX_SESSIONS ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3;
+  return positiveIntEnv("LIVE_MAX_SESSIONS", 3);
+}
+
+function maxSessionSeconds(): number {
+  return positiveIntEnv("LIVE_MAX_SESSION_SECONDS", DEFAULT_MAX_SESSION_SECONDS);
 }
 
 const registry = new Map<string, LiveConciergeSession>();
@@ -66,18 +92,24 @@ export class LiveConciergeSession {
   private readonly context: ToolContext;
   private readonly ws: SidebandWS;
   private readonly knownBusinesses = new Map<string, KnownBusiness>();
+  private readonly knownExperts = new Map<string, KnownExpert>();
   private readonly handledCalls = new Set<string>();
+  private readonly pendingAcks = new Map<string, PendingAck>();
   private toolQueue: Promise<void> = Promise.resolve();
-  private lastChoices: PresentChoicesPayload | null = null;
+  private lastChoices: ChoicesSnapshot | null = null;
+  private lastScreen: string | null = null;
   private transcriptSide: "user" | "assistant" | null = null;
   private transcriptBuffer = "";
   private transcriptTimer: NodeJS.Timeout | null = null;
+  private lifetimeTimer: NodeJS.Timeout | null = null;
+  private ackSeq = 0;
   private closed = false;
 
-  private constructor(id: string, context: ToolContext) {
+  private constructor(id: string, context: ToolContext, screen: string | null) {
     this.id = id;
     this.shortId = id.slice(-6);
     this.context = context;
+    this.lastScreen = screen;
     this.ws = new SidebandWS(openaiClient(), { session_id: id });
     this.ws.on("event", (event) => this.handleEvent(event));
     this.ws.on("error", (error) => {
@@ -87,6 +119,7 @@ export class LiveConciergeSession {
       this.log(`sideband closed (${code} ${reason || "-"})`);
       this.dispose();
     });
+    this.startLifetimeTimer();
   }
 
   static async create(
@@ -108,16 +141,106 @@ export class LiveConciergeSession {
           longitude: clientContext.location.longitude,
         }
       : {};
-    const session = new LiveConciergeSession(result.session.id, context);
+    const session = new LiveConciergeSession(
+      result.session.id,
+      context,
+      clientContext.screen?.trim() || null,
+    );
     registry.set(session.id, session);
     session.log(
-      `created voice=${String(sessionConfig.audio?.output?.voice)} location=${clientContext.location ? "yes" : "no"}`,
+      `created voice=${String(sessionConfig.audio?.output?.voice)} client=${clientContext.client ?? "-"} location=${clientContext.location ? "yes" : "no"} screen=${session.lastScreen ? "yes" : "no"}`,
     );
     return { result, session };
   }
 
-  get choices(): PresentChoicesPayload | null {
+  get choices(): ChoicesSnapshot | null {
     return this.lastChoices;
+  }
+
+  get screen(): string | null {
+    return this.lastScreen;
+  }
+
+  /**
+   * Docs prefer session.update for supported settings inside an existing delegation
+   * mode; thinking.append is the fallback when the update is rejected.
+   */
+  async setScreen(screen: string): Promise<ScreenContextTransport> {
+    this.lastScreen = screen;
+    const eventId = `screen-${(this.ackSeq += 1)}`;
+    try {
+      await this.sendAndAwaitAck(
+        {
+          type: "session.update",
+          event_id: eventId,
+          session: {
+            delegation: {
+              type: "responses",
+              responses: { instructions: backendInstructionsWithScreen(screen) },
+            },
+          },
+        },
+        eventId,
+      );
+      this.log(`screen via session.update: ${screen}`);
+      return "session.update";
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.log(`session.update rejected (${message}) — falling back to session.thinking.append`);
+      this.ws.send({
+        type: "session.thinking.append",
+        delegation_id: null,
+        content: screenContextLine(screen),
+      });
+      this.log(`screen via session.thinking.append: ${screen}`);
+      return "session.thinking.append";
+    }
+  }
+
+  close(): void {
+    if (this.closed) return;
+    try {
+      this.ws.send({ type: "session.close" });
+    } catch (error) {
+      console.error(`[live ${this.shortId}] session.close failed`, error);
+    }
+  }
+
+  private startLifetimeTimer(): void {
+    const seconds = maxSessionSeconds();
+    this.lifetimeTimer = setTimeout(() => {
+      this.log(`auto-closed after ${seconds}s (LIVE_MAX_SESSION_SECONDS)`);
+      this.close();
+    }, seconds * 1000);
+    this.lifetimeTimer.unref?.();
+  }
+
+  private sendAndAwaitAck(event: ConnectClientEvent, eventId: string): Promise<void> {
+    if (this.closed) return Promise.reject(new Error("Session already closed."));
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingAcks.delete(eventId);
+        reject(new Error(`No acknowledgement within ${ACK_TIMEOUT_MS}ms.`));
+      }, ACK_TIMEOUT_MS);
+      timer.unref?.();
+      this.pendingAcks.set(eventId, { resolve, reject, timer });
+      try {
+        this.ws.send(event);
+      } catch (error) {
+        this.settleAck(eventId, error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  private settleAck(eventId: string | undefined, error: Error | null): boolean {
+    if (!eventId) return false;
+    const pending = this.pendingAcks.get(eventId);
+    if (!pending) return false;
+    this.pendingAcks.delete(eventId);
+    clearTimeout(pending.timer);
+    if (error) pending.reject(error);
+    else pending.resolve();
+    return true;
   }
 
   private log(message: string): void {
@@ -135,6 +258,18 @@ export class LiveConciergeSession {
       case "session.delegation.created":
         this.log(`delegation ${event.delegation.target} ${event.delegation.id}`);
         return;
+      case "session.updated":
+        this.settleAck(event.client_event_id, null);
+        return;
+      case "error": {
+        const detail = `${event.error.type}/${event.error.code}: ${event.error.message}${event.error.param ? ` (param ${event.error.param})` : ""}`;
+        const claimed = this.settleAck(
+          event.client_event_id ?? event.error.client_event_id,
+          new Error(detail),
+        );
+        if (!claimed) this.log(`error ${detail}`);
+        return;
+      }
       case "session.closed":
         this.flushTranscript();
         this.log(`closed reason=${event.reason} usage=${JSON.stringify(event.usage)}`);
@@ -187,15 +322,27 @@ export class LiveConciergeSession {
     if (DATA_TOOL_NAMES.has(call.name)) {
       const run = await runTool(call.name, call.arguments, this.context);
       for (const business of run.businesses) this.knownBusinesses.set(business.business_id, business);
+      for (const expert of run.experts ?? []) this.knownExperts.set(expert.expert_id, expert);
       return run.payload;
     }
+    if (call.name === "get_screen_context") {
+      return this.lastScreen
+        ? { ok: true, screen: this.lastScreen }
+        : { ok: false, screen: null, hint: "Aplikace neposlala kontext obrazovky. Zeptej se, o který podnik jde." };
+    }
     if (call.name === "present_choices") {
-      const payload = presentChoices(call.arguments, this.knownBusinesses);
-      if (payload.ok) this.lastChoices = payload;
+      const payload = await presentChoices(call.arguments, this.knownBusinesses);
+      if (payload.ok) this.lastChoices = toChoicesSnapshot(payload.shown) ?? this.lastChoices;
       return payload;
     }
     if (call.name === "open_business") {
       return openBusiness(call.arguments, this.knownBusinesses);
+    }
+    if (call.name === "open_expert") {
+      return openExpert(call.arguments, this.knownExperts);
+    }
+    if (call.name === "show_on_map") {
+      return showOnMap(call.arguments, this.knownBusinesses);
     }
     return { error: `Unknown tool: ${call.name}` };
   }
@@ -226,6 +373,13 @@ export class LiveConciergeSession {
     if (this.closed) return;
     this.closed = true;
     this.flushTranscript();
+    if (this.lifetimeTimer) {
+      clearTimeout(this.lifetimeTimer);
+      this.lifetimeTimer = null;
+    }
+    for (const eventId of [...this.pendingAcks.keys()]) {
+      this.settleAck(eventId, new Error("Session closed before acknowledgement."));
+    }
     registry.delete(this.id);
     try {
       this.ws.close();

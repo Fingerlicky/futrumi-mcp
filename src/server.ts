@@ -64,7 +64,12 @@ app.route("/", liveRoutes);
 app.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /\n"));
 
 app.get("/healthz", (c) =>
-  c.json({ ok: true, endpoint: graphqlEndpoint, version: SERVER_INFO.version }),
+  c.json({
+    ok: true,
+    endpoint: graphqlEndpoint,
+    version: SERVER_INFO.version,
+    live: process.env.LIVE_ENABLED !== "false" && Boolean(process.env.OPENAI_API_KEY?.trim()),
+  }),
 );
 
 app.all("/mcp", async (c) => {
