@@ -6,6 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 
 import { graphqlEndpoint } from "./graphql-client.js";
+import { liveRoutes } from "./live/routes.js";
 import { registerSearchRecommendations } from "./tools/search-recommendations.js";
 import { registerFindRecommendationsNear } from "./tools/find-recommendations-near.js";
 import { registerGetRecommendation } from "./tools/get-recommendation.js";
@@ -58,6 +59,8 @@ app.use(
   }),
 );
 
+app.route("/", liveRoutes);
+
 app.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /\n"));
 
 app.get("/healthz", (c) =>
@@ -96,4 +99,7 @@ const port = Number.parseInt(process.env.PORT ?? "8080", 10);
 serve({ fetch: app.fetch, port }, ({ port }) => {
   console.log(`futrumi-mcp listening on http://localhost:${port}/mcp`);
   console.log(`  GraphQL backend: ${graphqlEndpoint}`);
+  if (process.env.LIVE_ENABLED !== "false") {
+    console.log(`  Live concierge demo: http://localhost:${port}/live/demo`);
+  }
 });
