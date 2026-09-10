@@ -14,18 +14,11 @@ export const RECOMMENDATIONS_QUERY = /* GraphQL */ `
         expert {
           id
           name
-          photoUrl {
-            url
-          }
         }
         business {
           id
           name
           address
-          location {
-            latitude
-            longitude
-          }
           primaryBusinessType {
             id
             name
@@ -35,6 +28,18 @@ export const RECOMMENDATIONS_QUERY = /* GraphQL */ `
         meals {
           id
           name
+        }
+        mentions {
+          id
+          phrase
+          targetType
+          targetId
+          targetBusiness {
+            name
+          }
+          targetExpert {
+            name
+          }
         }
       }
     }
@@ -114,6 +119,21 @@ export const RECOMMENDATION_QUERY = /* GraphQL */ `
           url
           approved
         }
+<<<<<<< HEAD
+=======
+      }
+      mentions {
+        id
+        phrase
+        targetType
+        targetId
+        targetBusiness {
+          name
+        }
+        targetExpert {
+          name
+        }
+>>>>>>> main
       }
     }
   }
@@ -187,6 +207,21 @@ export const BUSINESS_QUERY = /* GraphQL */ `
             url
             approved
           }
+<<<<<<< HEAD
+=======
+        }
+        mentions {
+          id
+          phrase
+          targetType
+          targetId
+          targetBusiness {
+            name
+          }
+          targetExpert {
+            name
+          }
+>>>>>>> main
         }
       }
     }

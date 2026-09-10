@@ -58,6 +58,8 @@ app.use(
   }),
 );
 
+app.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /\n"));
+
 app.get("/healthz", (c) =>
   c.json({ ok: true, endpoint: graphqlEndpoint, version: SERVER_INFO.version }),
 );

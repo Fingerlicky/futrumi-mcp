@@ -23,6 +23,13 @@ and a deep link to open the business in the Futrumi mobile app. Recommendations 
 cafés, bars, bakeries, wine shops, and other food businesses, primarily in Prague and Brno but
 expanding to other Czech cities.
 
+**Coverage is Czechia only.** Futrumi has no data for any other country: a query about Vienna,
+Bratislava, or anywhere outside Czechia returns an explicit "no recommendations found" rather than
+a guess, so the assistant can say so instead of inventing places. Expert quotes are served in the
+original Czech — assistants can translate them, but the wording stays the expert's own. Beyond
+locals, the data suits anyone planning a trip to Prague or Brno who wants tips from named Czech
+food critics rather than aggregated review scores.
+
 The connector exposes six read-only tools:
 
 - `search_recommendations` — find expert tips around a place by category or vibe
@@ -38,4 +45,8 @@ and read-only.
 
 ## Categories / tags
 
-Lifestyle · Food & Drink · Travel · Czech Republic · Restaurant recommendations
+Zamýšlené: Lifestyle · Food & Drink · Travel · Czech Republic · Restaurant recommendations
+
+**Pozor: „Food & Drink" ani „Lifestyle" v číselnících directory neexistují** — ověřeno v Anthropic
+directory 12. 8. 2026, kde Futrumi kvůli tomu pořád visí pod `media`. Vybírej výhradně z nabídky
+daného portálu, nejblíž je `Travel`. Nevymýšlet kategorii, kterou pak nikdo nemůže přiřadit.

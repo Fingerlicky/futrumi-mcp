@@ -1,9 +1,24 @@
 import type { RecommendationListItem } from "./types.js";
 
+// `kind` decides whether a concept lexicon may match this field, and how loosely:
+//   food  — structured, curated values (dish names, business name and type). Anything goes.
+//   prose — free text written by an expert. Only terms of 4+ characters, because short
+//           food words collide with ordinary Czech ones: "o něm" normalizes to "nem",
+//           which is a spring roll in the vietnamese concept and used to drag a French
+//           restaurant into results for "vietnamská pho".
+//   meta  — address and expert name. Never concept-matched: every business has a street,
+//           and "Vinohradská" prefix-matches the wine term "vino", which pulled a bakery
+//           into results for "vinárna".
+// Direct query-token matches are unaffected — searching by street or by expert still works.
+type FieldKind = "food" | "prose" | "meta";
+
 interface WeightedText {
   text: string | null | undefined;
   weight: number;
+  kind: FieldKind;
 }
+
+const MIN_CONCEPT_TERM_LENGTH_IN_PROSE = 4;
 
 interface Concept {
   id: string;
@@ -179,13 +194,16 @@ function scoreField(
     }
   }
 
-  for (const concept of activeConcepts) {
-    let conceptHits = 0;
-    for (const term of concept.terms) {
-      if (containsTerm(text, tokens, term)) conceptHits += 1;
-    }
-    if (conceptHits > 0) {
-      score += Math.min(conceptHits, 3) * 1.8 * field.weight;
+  if (field.kind !== "meta") {
+    for (const concept of activeConcepts) {
+      let conceptHits = 0;
+      for (const term of concept.terms) {
+        if (field.kind === "prose" && term.length < MIN_CONCEPT_TERM_LENGTH_IN_PROSE) continue;
+        if (containsTerm(text, tokens, term)) conceptHits += 1;
+      }
+      if (conceptHits > 0) {
+        score += Math.min(conceptHits, 3) * 1.8 * field.weight;
+      }
     }
   }
 
@@ -194,13 +212,13 @@ function scoreField(
 
 function recommendationFields(rec: RecommendationListItem): WeightedText[] {
   return [
-    { text: rec.business.name, weight: 7 },
-    { text: rec.meals.map((meal) => meal.name).join(" "), weight: 8 },
-    { text: rec.business.primaryBusinessType.name, weight: 5 },
-    { text: rec.strongQuote, weight: 4 },
-    { text: rec.description, weight: 3 },
-    { text: rec.business.address, weight: 1 },
-    { text: rec.expert.name, weight: 1 },
+    { text: rec.business.name, weight: 7, kind: "food" },
+    { text: rec.meals.map((meal) => meal.name).join(" "), weight: 8, kind: "food" },
+    { text: rec.business.primaryBusinessType.name, weight: 5, kind: "food" },
+    { text: rec.strongQuote, weight: 4, kind: "prose" },
+    { text: rec.description, weight: 3, kind: "prose" },
+    { text: rec.business.address, weight: 1, kind: "meta" },
+    { text: rec.expert.name, weight: 1, kind: "meta" },
   ];
 }
 

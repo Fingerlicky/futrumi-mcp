@@ -18,17 +18,19 @@ export interface PhotoRef {
   approved: boolean;
 }
 
+// `photoUrl` is only selected where a photo is actually rendered — the
+// recommendation list query leaves it out to keep large candidate pages small.
 export interface ExpertRef {
   id: string;
   name: string;
-  photoUrl: { url: string } | null;
+  photoUrl?: { url: string } | null;
 }
 
 export interface BusinessRef {
   id: string;
   name: string;
   address: string;
-  location: Location | null;
+  location?: Location | null;
   primaryBusinessType: BusinessTypeRef;
   openingHours: string;
 }
@@ -36,6 +38,18 @@ export interface BusinessRef {
 export interface MealRef {
   id: string;
   name: string;
+}
+
+// A phrase inside `description` that links to another business or expert.
+// `targetBusiness`/`targetExpert` are mutually exclusive based on `targetType`
+// and are only fetched here to resolve a display name without a follow-up call.
+export interface MentionRef {
+  id: string;
+  phrase: string;
+  targetType: "business" | "expert";
+  targetId: string;
+  targetBusiness: { name: string } | null;
+  targetExpert: { name: string } | null;
 }
 
 export interface MealDetail {
@@ -54,6 +68,7 @@ export interface RecommendationListItem {
   expert: ExpertRef;
   business: BusinessRef;
   meals: MealRef[];
+  mentions: MentionRef[];
 }
 
 export interface BusinessListItem {
@@ -96,6 +111,7 @@ export interface NestedRecommendation {
   expert: ExpertRef;
   photosWithoutMeal: PhotoRef[];
   meals: MealDetail[];
+  mentions: MentionRef[];
 }
 
 export interface RecommendationDetail {
@@ -107,6 +123,7 @@ export interface RecommendationDetail {
   business: BusinessRef;
   photosWithoutMeal: PhotoRef[];
   meals: MealDetail[];
+  mentions: MentionRef[];
 }
 
 export interface ExpertDetail {
