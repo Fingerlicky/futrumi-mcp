@@ -281,7 +281,8 @@ function renderCards(shown) {
 
 async function fetchChoices() {
   if (!sessionId) return;
-  for (let attempt = 0; attempt < 5; attempt += 1) {
+  // present_choices may still be enriching missing experts/coordinates server-side.
+  for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
       const response = await fetch("/live/session/" + encodeURIComponent(sessionId) + "/choices", {
         headers: authHeaders(),
@@ -296,7 +297,7 @@ async function fetchChoices() {
     } catch (error) {
       console.warn("choices fetch failed", error);
     }
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 400));
   }
 }
 
