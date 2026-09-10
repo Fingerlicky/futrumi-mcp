@@ -119,8 +119,6 @@ export const RECOMMENDATION_QUERY = /* GraphQL */ `
           url
           approved
         }
-<<<<<<< HEAD
-=======
       }
       mentions {
         id
@@ -133,7 +131,6 @@ export const RECOMMENDATION_QUERY = /* GraphQL */ `
         targetExpert {
           name
         }
->>>>>>> main
       }
     }
   }
@@ -207,8 +204,6 @@ export const BUSINESS_QUERY = /* GraphQL */ `
             url
             approved
           }
-<<<<<<< HEAD
-=======
         }
         mentions {
           id
@@ -221,7 +216,6 @@ export const BUSINESS_QUERY = /* GraphQL */ `
           targetExpert {
             name
           }
->>>>>>> main
         }
       }
     }
