@@ -99,3 +99,59 @@ Once production has been validated for a few days, follow the steps in the plan 
 - Claude Connectors directory ([submission docs](https://claude.com/docs/connectors/building/submission))
 - ChatGPT App Directory ([Apps SDK](https://developers.openai.com/apps-sdk))
 - Official MCP Registry (https://registry.modelcontextprotocol.io)
+
+## 8. Live concierge (hlasový průvodce)
+
+Hlasová část (`/live/*`) běží ve stejné službě. Kontrakt pro klienty je v
+[src/live/README.md](src/live/README.md).
+
+### Env proměnné
+
+| Klíč | Typ | Význam |
+|---|---|---|
+| `OPENAI_API_KEY` | **secret** | Bez něj `POST /live/session` vrací 503. |
+| `LIVE_ACCESS_CODES` | **secret** | Kódy oddělené čárkou pro hlavičku `x-live-access-code`. Prázdné = bez kontroly (jen lokálně!). |
+| `LIVE_ENABLED` | plain | `false` skryje celé `/live/*` za 404. |
+| `LIVE_BACKEND_MODEL` | plain | Responses model, na který Live deleguje (`gpt-5.6-luna`). |
+| `LIVE_MAX_SESSIONS` | plain | Souběžné session na proces, pak 429. |
+| `LIVE_MAX_SESSION_SECONDS` | plain | Tvrdý strop jednoho hovoru (default 600). |
+
+Tajné hodnoty patří jen do DO dashboardu (App → Settings → App-Level
+Environment Variables, typ `SECRET`). `.do/app.yaml` drží jen ne-tajné.
+Pozor: App Platform spec z repa při pushi sám nepřebírá — je to dokumentace,
+hodnoty se mění v dashboardu.
+
+### Smoke test produkce
+
+```bash
+APP_URL=https://mcp.futrumi.cz
+CODE=<přístupový kód>
+
+# Nový build poznáš podle pole "live"
+curl -s "$APP_URL/healthz"
+# {"ok":true,...,"live":true}
+
+# Seznam hlasů je bez kódu
+curl -s -o /dev/null -w '%{http_code}\n' "$APP_URL/live/voices"        # 200
+
+# Bez kódu se session nevytvoří
+curl -s -X POST "$APP_URL/live/session" \
+  -H 'content-type: application/json' -d '{"sdp":"v=0\r\n"}'
+# 401 {"error":"invalid_access_code"}
+
+# S kódem projde autorizace a padne až validace SDP u OpenAI —
+# tím je ověřeno, že klíč na produkci funguje
+curl -s -X POST "$APP_URL/live/session" \
+  -H 'content-type: application/json' -H "x-live-access-code: $CODE" \
+  -d '{"sdp":"v=0\r\n"}'
+# 400 {"error":"Live session creation failed.","detail":"400 Offer did not have an audio media section."}
+
+# Regrese: MCP musí dál fungovat
+curl -s -X POST "$APP_URL/mcp" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' | head -c 200
+```
+
+Demo stránka `"$APP_URL/live/demo"` je veřejná (noindex) a kód si pamatuje
+v localStorage.

@@ -680,6 +680,19 @@ export async function presentChoices(
   };
 }
 
+export function screenContextPayload(
+  screen: string | null,
+): { ok: true; screen: string } | { ok: false; screen: null; hint: string } {
+  if (!screen) {
+    return {
+      ok: false,
+      screen: null,
+      hint: "Aplikace neposlala kontext obrazovky. Zeptej se, o který podnik jde.",
+    };
+  }
+  return { ok: true, screen };
+}
+
 export function toChoicesSnapshot(shown: PresentedChoice[]): ChoicesSnapshot | null {
   const [primary, ...backups] = shown;
   if (!primary) return null;

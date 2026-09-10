@@ -9,6 +9,7 @@ import {
   openExpert,
   presentChoices,
   runTool,
+  screenContextPayload,
   showOnMap,
   toChoicesSnapshot,
   type ChoicesSnapshot,
@@ -326,9 +327,7 @@ export class LiveConciergeSession {
       return run.payload;
     }
     if (call.name === "get_screen_context") {
-      return this.lastScreen
-        ? { ok: true, screen: this.lastScreen }
-        : { ok: false, screen: null, hint: "Aplikace neposlala kontext obrazovky. Zeptej se, o který podnik jde." };
+      return screenContextPayload(this.lastScreen);
     }
     if (call.name === "present_choices") {
       const payload = await presentChoices(call.arguments, this.knownBusinesses);
