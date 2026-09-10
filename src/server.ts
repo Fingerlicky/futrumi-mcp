@@ -16,7 +16,7 @@ import { registerListExperts } from "./tools/list-experts.js";
 
 const SERVER_INFO = {
   name: "futrumi",
-  version: "0.1.0",
+  version: "0.1.1",
   title: "Futrumi — Czech restaurant recommendations",
 };
 

@@ -45,6 +45,20 @@ Odpovědi:
 Klient pak nastaví `transport.sdp` jako remote description. `session.start`
 neposílá — session už běží.
 
+### Úvodní pozdrav
+
+Hlas začíná hovor sám, klient o to nemusí žádat. Statické `instructions` na to
+nestačí (naměřeno: model mlčí, dokud uživatel nepromluví), takže server po
+prvním sidebandovém eventu (`session.started`) pošle
+`session.commentary.append` s `delegation_id: null` a textem pozdravu, který
+model parafrázuje. `session.instructions.append` funguje taky, ale k první
+slyšitelné odpovědi je o ~2 s pomalejší.
+
+Pozdrav je vázaný na tok médií: dokud WebRTC spojení klienta nestojí, model
+nemluví a append skončí chybou `context_injection_incomplete`. V logu serveru
+jsou k tomu řádky `greeting requested`, `greeting append acked` a
+`greeting spoken (+Xms)`.
+
 ## `POST /live/session/{id}/context`
 
 Aktuální obrazovka uživatele. Volej při vstupu na detail podniku/experta a při

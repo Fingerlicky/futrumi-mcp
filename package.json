@@ -1,6 +1,6 @@
 {
   "name": "futrumi-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "MCP server exposing Futrumi restaurant recommendations to Claude, ChatGPT, and Codex.",
   "type": "module",

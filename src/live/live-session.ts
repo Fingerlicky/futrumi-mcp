@@ -30,6 +30,15 @@ const MAX_TOOL_OUTPUT_CHARS = 12000;
 const ACK_TIMEOUT_MS = 4000;
 const DEFAULT_MAX_SESSION_SECONDS = 600;
 
+/**
+ * Static instructions do not make the model open the call — measured: it stays
+ * silent until the user speaks. An append does. commentary.append (spoken text
+ * the model paraphrases) beat instructions.append by ~2 s to first audio, so the
+ * greeting goes out as commentary.
+ */
+const GREETING_TEXT = "Ahoj, tady Futrumi. Kam máš chuť?";
+const GREETING_SPOKEN_WINDOW_MS = 10000;
+
 export type ScreenContextTransport = "session.update" | "session.thinking.append";
 
 export class LiveSessionLimitError extends Error {
@@ -103,6 +112,8 @@ export class LiveConciergeSession {
   private transcriptBuffer = "";
   private transcriptTimer: NodeJS.Timeout | null = null;
   private lifetimeTimer: NodeJS.Timeout | null = null;
+  private greetingRequestedAt: number | null = null;
+  private greetingSpoken = false;
   private ackSeq = 0;
   private closed = false;
 
@@ -248,13 +259,41 @@ export class LiveConciergeSession {
     console.log(`[live ${this.shortId}] ${message}`);
   }
 
+  /** The model waits for the user unless something is appended to the session. */
+  private requestGreeting(): void {
+    if (this.closed || this.greetingRequestedAt !== null) return;
+    this.greetingRequestedAt = Date.now();
+    this.ws.send({
+      type: "session.commentary.append",
+      event_id: `greeting-${(this.ackSeq += 1)}`,
+      delegation_id: null,
+      content: GREETING_TEXT,
+    });
+    this.log("greeting requested");
+  }
+
+  private noteGreetingSpoken(): void {
+    if (this.greetingSpoken || this.greetingRequestedAt === null) return;
+    const elapsed = Date.now() - this.greetingRequestedAt;
+    this.greetingSpoken = true;
+    if (elapsed <= GREETING_SPOKEN_WINDOW_MS) this.log(`greeting spoken (+${elapsed}ms)`);
+  }
+
   private handleEvent(event: ConnectServerEvent): void {
     switch (event.type) {
+      case "session.started":
+        this.log(`sideband attached to running session ${event.session.id}`);
+        this.requestGreeting();
+        return;
       case "session.input_transcript.delta":
         this.appendTranscript("user", event.delta);
         return;
       case "session.output_transcript.delta":
+        this.noteGreetingSpoken();
         this.appendTranscript("assistant", event.delta);
+        return;
+      case "session.commentary.appended":
+        this.log(`greeting append acked (${event.start_ms}–${event.end_ms}ms on session timeline)`);
         return;
       case "session.delegation.created":
         this.log(`delegation ${event.delegation.target} ${event.delegation.id}`);
@@ -263,12 +302,12 @@ export class LiveConciergeSession {
         this.settleAck(event.client_event_id, null);
         return;
       case "error": {
+        const clientEventId = event.client_event_id ?? event.error.client_event_id;
         const detail = `${event.error.type}/${event.error.code}: ${event.error.message}${event.error.param ? ` (param ${event.error.param})` : ""}`;
-        const claimed = this.settleAck(
-          event.client_event_id ?? event.error.client_event_id,
-          new Error(detail),
-        );
-        if (!claimed) this.log(`error ${detail}`);
+        const claimed = this.settleAck(clientEventId, new Error(detail));
+        if (!claimed) {
+          this.log(`error ${detail}${clientEventId ? ` (client_event_id ${clientEventId})` : ""}`);
+        }
         return;
       }
       case "session.closed":
