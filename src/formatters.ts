@@ -3,10 +3,7 @@ import type {
   BusinessListItem,
   ExpertDetail,
   ExpertListItem,
-<<<<<<< HEAD
-=======
   MentionRef,
->>>>>>> main
   PhotoRef,
   RecommendationDetail,
   RecommendationListItem,
@@ -50,8 +47,6 @@ const collectPhotoUrls = (...groups: (PhotoRef | null | undefined)[][]): string[
 const photoLinks = (urls: string[]): string =>
   urls.map((url, i) => `[${i + 1}](${url})`).join(", ");
 
-<<<<<<< HEAD
-=======
 // Mentions link a phrase inside `description` to another business/expert.
 // Surface them as "phrase → target" so the model can follow up with
 // get_business/get_expert without re-parsing the description text.
@@ -78,7 +73,6 @@ const formatQuoteLine = (
   return attribution ? `> ${body} — **${attribution}**` : `> ${body}`;
 };
 
->>>>>>> main
 export function formatRecommendationCard(rec: RecommendationListItem, index: number): string {
   const distance = formatDistance(rec.distance);
   const status = formatOpeningHours(rec.business.openingHours);
