@@ -14,7 +14,8 @@
     "concierge:cli": "tsx src/concierge/cli.ts",
     "concierge:telegram": "tsx src/concierge/telegram.ts",
     "typecheck": "tsc --noEmit",
-    "inspect": "npx --yes @modelcontextprotocol/inspector"
+    "inspect": "npx --yes @modelcontextprotocol/inspector",
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "1.19.4",

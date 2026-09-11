@@ -21,18 +21,12 @@ const readEnvInt = (name: string, fallback: number, min: number, max: number): n
   return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
 };
 
-const candidateCeiling = readEnvInt(
-  "SEMANTIC_CANDIDATE_CEILING",
-  DEFAULT_CANDIDATE_CEILING,
-  50,
-  2000,
-);
-const candidatePageSize = readEnvInt(
-  "SEMANTIC_CANDIDATE_LIMIT",
-  DEFAULT_CANDIDATE_PAGE_SIZE,
-  50,
-  500,
-);
+// Read per call rather than at import time so tests can exercise a deployment's
+// env without re-importing the module.
+const candidateCeiling = () =>
+  readEnvInt("SEMANTIC_CANDIDATE_CEILING", DEFAULT_CANDIDATE_CEILING, 50, 2000);
+const candidatePageSize = () =>
+  readEnvInt("SEMANTIC_CANDIDATE_LIMIT", DEFAULT_CANDIDATE_PAGE_SIZE, 50, 500);
 
 export interface SearchRecommendationsInput {
   query?: string;
@@ -77,15 +71,16 @@ export async function searchRecommendations(
     return data.recommendations;
   };
 
-  const ceiling = query ? Math.max(limit, candidateCeiling) : limit;
-  const firstPage = await fetchPage(0, Math.min(ceiling, query ? candidatePageSize : limit));
+  const pageSize = candidatePageSize();
+  const ceiling = query ? Math.max(limit, candidateCeiling()) : limit;
+  const firstPage = await fetchPage(0, Math.min(ceiling, query ? pageSize : limit));
 
   const candidates = [...firstPage.edges];
   const wanted = Math.min(firstPage.total, ceiling);
   if (query && candidates.length < wanted) {
-    const pageCount = Math.ceil(wanted / candidatePageSize);
+    const pageCount = Math.ceil(wanted / pageSize);
     const rest = await Promise.all(
-      Array.from({ length: pageCount - 1 }, (_, i) => fetchPage(i + 1, candidatePageSize)),
+      Array.from({ length: pageCount - 1 }, (_, i) => fetchPage(i + 1, pageSize)),
     );
     for (const page of rest) candidates.push(...page.edges);
   }
