@@ -22,7 +22,7 @@ export function registerGetExpert(server: McpServer) {
       description:
         "Return an expert's bio plus a list of their recommendations (business name, address, quote, meals). Use when the user asks about a specific expert.",
       inputSchema,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async (args) => {
       const result = await getExpert(args);

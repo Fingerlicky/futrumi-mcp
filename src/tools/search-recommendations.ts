@@ -50,7 +50,7 @@ export function registerSearchRecommendations(server: McpServer) {
       description:
         'Search and rank expert-recommended restaurants/cafes/bars/etc around a location. Use this when the user asks for a specific cuisine, meal, occasion, vibe, or category ("good ramen in Vinohrady", "brunch in Brno", "vinný bar na rande"). Pass the user intent in `query`; the server ranks candidates by semantic-ish food/occasion relevance before returning markdown. The data is Czech-only and includes only PUBLISHED recommendations.',
       inputSchema,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async (args) => {
       const result = await searchRecommendations(args);

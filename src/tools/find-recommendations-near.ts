@@ -40,7 +40,7 @@ export function registerFindRecommendationsNear(server: McpServer) {
       description:
         'Geo-only lookup: return expert-recommended businesses near a point, sorted by distance. Use this when the user just wants to know "what good places are around X" without a specific cuisine/category. For category- or vibe-specific queries use search_recommendations instead. Returns markdown.',
       inputSchema,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async (args) => {
       const result = await findRecommendationsNear(args);

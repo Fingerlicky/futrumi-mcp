@@ -63,6 +63,15 @@ app.route("/", liveRoutes);
 
 app.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /\n"));
 
+// Domain-ownership proof for the ChatGPT Plugins Directory submission. OpenAI
+// fetches this origin-root path and compares the body to the token it issued;
+// the value is public by design, the same way a DNS TXT challenge is.
+const OPENAI_APPS_CHALLENGE_TOKEN =
+  process.env.OPENAI_APPS_CHALLENGE_TOKEN?.trim() ||
+  "cOPk_ns5AFgN9ayjgBIvJqj4BEWtoEK3iVZ_LE7GpGI";
+
+app.get("/.well-known/openai-apps-challenge", (c) => c.text(OPENAI_APPS_CHALLENGE_TOKEN));
+
 app.get("/healthz", (c) =>
   c.json({
     ok: true,

@@ -16,7 +16,7 @@ export function registerListExperts(server: McpServer) {
       description:
         "Paginated directory of all Futrumi experts with their bio and recommendation count. Use this when the user asks who's behind the recommendations, or wants to browse by expert.",
       inputSchema,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async (args) => {
       const result = await listExperts(args);
