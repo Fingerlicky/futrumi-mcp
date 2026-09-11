@@ -1,7 +1,54 @@
 # ChatGPT plugin submission — Futrumi
 
 Podklady pro submission Futrumi MCP serveru do **ChatGPT Plugins Directory** (portál
-`platform.openai.com/plugins`, sdílený s Codexem). Stav k 14. 8. 2026.
+`platform.openai.com/plugins`, sdílený s Codexem). **Stav k 11. 9. 2026: draft v portálu je
+vyplněný, chybí jen demo video a Honzovy policy attestations.**
+
+Draft: `platform.openai.com/plugins/edit/asdk_app_6aa3a5403d348191b9a148c5cfd4dc4b/asdk_app_v_6aa3a541bc5c819197f23305a0c0b684`
+
+| Tab | Stav |
+|---|---|
+| Info | hotovo — jen **Demo recording URL chybí** (blocker) |
+| MCP | hotovo, doména **ověřená**, 18 zdůvodnění anotací vyplněno |
+| Skills | přeskočeno (submitujeme MCP-only) |
+| Prompts | 3 prompty (2 CZ + 1 EN) |
+| Testing | 5 pozitivních + 3 negativní, všech 26 polí ověřeně uložených |
+| Global | Allow all countries; **čeština v lokalizacích neexistuje** (hledáno „Czech" i „cs") |
+| Submit | release notes hotové; **7 policy attestations + věková otázka = na Honzovi** |
+
+### Co se v portálu naučilo (11. 9.)
+
+- **Business verifikace přes Personu určuje jméno vydavatele polem DBA** → identity se v portálu
+  nabízí jako „Business — Futrumi", což jsme chtěli.
+- **Portál vyžaduje `destructiveHint`** u každého nástroje, jinak nepustí submit („did not include
+  an annotation for destructiveHint… then rescan"). Doplněno commitem `c363da9`, pak Scan Tools.
+- **Domain verification obsluhuje sám MCP server** na `/.well-known/openai-apps-challenge`
+  (route v `src/server.ts`, token lze přebít `OPENAI_APPS_CHALLENGE_TOKEN`). Nebylo potřeba
+  sahat na futrumi-web.
+- **PAST: accordiony testovacích případů.** Psaní do polí zabaleného accordionu se tiše zahodí,
+  ale hlavička přesto ukáže zelenou fajfku — vypadá to vyplněně a submit pak hlásí „Test case
+  scenario is required". Případ se musí rozbalit kliknutím na hlavičku, teprve pak vyplňovat, a
+  ověřovat hodnoty přímo z DOM (`document.querySelectorAll('input[type=text], textarea')`).
+- Portál nabízí zrychlení přes Codex (`$chatgpt-app-submission` skill → JSON upload). Nepoužito,
+  vyplněno ručně podle tohoto dokumentu.
+- Info tab chce **dvě PNG ikony** (directory ≥256 px light+dark, composer ≥48 px) — použit
+  `futrumi-web/images/app-icon.png` (1024×1024).
+- Subtitle má limit **30 znaků**, takže „Czech expert restaurant recommendations" (39) neprošlo;
+  použito „Czech restaurant expert tips" (28).
+- **Zjištění k `openWorldHint: false`:** `search_recommendations` a `find_recommendations_near`
+  volají kvůli geokódování **OpenStreetMap Nominatim**, tedy cizí službu. Zdůvodnění to schválně
+  přiznává (výsledky pocházejí jen z našeho datasetu, Nominatim jen převádí název místa na
+  souřadnice). Kdyby to recenzent zamítl, alternativa je přepnout ty dva nástroje na
+  `openWorldHint: true` a znovu rescanovat.
+
+### Demo recording URL — jediný technický blocker
+
+Portál chce video, jak plugin funguje v **Developer Mode** ChatGPT (screen recording stačí, video
+se nezveřejňuje, slouží k validaci testovacích případů). Postup: zapnout Developer Mode v ChatGPT,
+připojit `https://mcp.futrumi.cz/mcp`, nahrát obrazovku při jednom z testovacích promptů
+(např. „Najdi mi vinný bar na rande na Vinohradech."), nahrát video někam s veřejnou URL a tu
+vložit do Info tabu.
+
 
 Terminologie 2026: OpenAI už neříká „app", ale **plugin** — jeden plugin obsahuje MCP server,
 skills, nebo obojí. My submitujeme variantu **„With MCP" (MCP-only)**, bez skills a bez UI
