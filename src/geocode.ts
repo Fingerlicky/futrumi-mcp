@@ -101,7 +101,79 @@ function suggestedRadiusFor(query: string, result: NominatimResult, center: Loca
   return undefined;
 }
 
+// Nominatim is a free service run by the OSM Foundation and its usage policy is
+// strict: at most one request per second, results must be cached, and abusers get
+// banned. A ban would take down location search for every user of this server, so
+// both guards live here rather than being left to good behaviour upstream.
+const GEOCODE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const GEOCODE_CACHE_MAX_ENTRIES = 500;
+const NOMINATIM_MIN_INTERVAL_MS = 1100;
+
+interface CacheEntry {
+  value: GeocodeResult | null;
+  expiresAt: number;
+}
+
+const geocodeCache = new Map<string, CacheEntry>();
+// Concurrent requests for the same place share one lookup instead of racing.
+const inFlight = new Map<string, Promise<GeocodeResult | null>>();
+let nextSlotAt = 0;
+
+const cacheKey = (query: string) => normalizePlaceQuery(query);
+
+function readCache(key: string): CacheEntry | undefined {
+  const hit = geocodeCache.get(key);
+  if (!hit) return undefined;
+  if (hit.expiresAt <= Date.now()) {
+    geocodeCache.delete(key);
+    return undefined;
+  }
+  // Refresh recency so the eviction below drops the least recently used entry.
+  geocodeCache.delete(key);
+  geocodeCache.set(key, hit);
+  return hit;
+}
+
+function writeCache(key: string, value: GeocodeResult | null): void {
+  geocodeCache.set(key, { value, expiresAt: Date.now() + GEOCODE_CACHE_TTL_MS });
+  while (geocodeCache.size > GEOCODE_CACHE_MAX_ENTRIES) {
+    const oldest = geocodeCache.keys().next();
+    if (oldest.done) break;
+    geocodeCache.delete(oldest.value);
+  }
+}
+
+// Serialises outgoing calls onto >=1.1s slots. Only cache misses queue here.
+async function waitForSlot(): Promise<void> {
+  const now = Date.now();
+  const slot = Math.max(now, nextSlotAt);
+  nextSlotAt = slot + NOMINATIM_MIN_INTERVAL_MS;
+  const delay = slot - now;
+  if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+}
+
 export async function geocode(query: string): Promise<GeocodeResult | null> {
+  const key = cacheKey(query);
+  const cached = readCache(key);
+  if (cached) return cached.value;
+
+  const pending = inFlight.get(key);
+  if (pending) return pending;
+
+  const lookup = fetchFromNominatim(query)
+    .then((result) => {
+      writeCache(key, result);
+      return result;
+    })
+    .finally(() => {
+      inFlight.delete(key);
+    });
+  inFlight.set(key, lookup);
+  return lookup;
+}
+
+async function fetchFromNominatim(query: string): Promise<GeocodeResult | null> {
+  await waitForSlot();
   const params = new URLSearchParams({
     q: query,
     format: "json",
