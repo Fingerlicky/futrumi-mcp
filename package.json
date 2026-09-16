@@ -18,6 +18,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@google/genai": "2.22.0",
     "@hono/node-server": "1.19.4",
     "@modelcontextprotocol/sdk": "1.29.0",
     "graphql": "16.11.0",

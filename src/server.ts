@@ -9,6 +9,7 @@ import { graphqlEndpoint } from "./graphql-client.js";
 import { liveRoutes } from "./live/routes.js";
 import { registerSearchRecommendations } from "./tools/search-recommendations.js";
 import { registerFindRecommendationsNear } from "./tools/find-recommendations-near.js";
+import { registerTopBusinesses } from "./tools/top-businesses.js";
 import { registerGetRecommendation } from "./tools/get-recommendation.js";
 import { registerGetBusiness } from "./tools/get-business.js";
 import { registerGetExpert } from "./tools/get-expert.js";
@@ -36,6 +37,7 @@ function buildMcpServer(): McpServer {
   });
   registerSearchRecommendations(server);
   registerFindRecommendationsNear(server);
+  registerTopBusinesses(server);
   registerGetRecommendation(server);
   registerGetBusiness(server);
   registerGetExpert(server);

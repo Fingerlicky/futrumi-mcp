@@ -7,6 +7,7 @@ import { getExpert } from "../services/get-expert.js";
 import { getRecommendation } from "../services/get-recommendation.js";
 import { listExperts } from "../services/list-experts.js";
 import { searchRecommendations } from "../services/search-recommendations.js";
+import { topBusinesses } from "../services/top-businesses.js";
 import type {
   BusinessDetail,
   BusinessListItem,
@@ -109,6 +110,31 @@ export const DATA_TOOLS: FunctionTool[] = [
         radiusMeters: { type: "integer", minimum: 100, maximum: 50000 },
         openNow: { type: "boolean" },
         limit: { type: "integer", minimum: 1, maximum: 10 },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "top_businesses",
+    description:
+      "Žebříček podniků v okolí podle počtu expertů, kteří je doporučují. Použij na dotazy typu „nej podniky v Brně“, „kam chodí nejvíc expertů“, „nejdoporučovanější kavárny v okolí“. Rádius je kruh kolem středu, tedy okolí, ne přesná hranice města. Na počet doporučení jednoho experta použij list_experts.",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        locationQuery: {
+          type: "string",
+          description: 'Město, čtvrť nebo kraj, např. "Brno" nebo "Jihomoravský kraj".',
+        },
+        latitude: { type: "number" },
+        longitude: { type: "number" },
+        radiusMeters: { type: "integer", minimum: 100, maximum: 50000 },
+        businessType: {
+          type: "string",
+          description: 'Filtr na typ podniku, např. "kavárna", "restaurace", "bar".',
+        },
+        limit: { type: "integer", minimum: 1, maximum: 25 },
       },
       additionalProperties: false,
     },
@@ -272,6 +298,7 @@ export const APP_TOOLS: FunctionTool[] = [
 
 export const LIVE_TOOLS: FunctionTool[] = [...DATA_TOOLS, ...SESSION_TOOLS, ...APP_TOOLS];
 
+export const LIVE_TOOL_NAMES = new Set(LIVE_TOOLS.map((tool) => tool.name));
 export const DATA_TOOL_NAMES = new Set(DATA_TOOLS.map((tool) => tool.name));
 export const SESSION_TOOL_NAMES = new Set(SESSION_TOOLS.map((tool) => tool.name));
 export const APP_TOOL_NAMES = new Set(APP_TOOLS.map((tool) => tool.name));
@@ -294,10 +321,19 @@ function coordsOf(location: Location | null | undefined): { latitude: number; lo
   return { latitude, longitude };
 }
 
-export function parseArgs(raw: string): JsonRecord {
+/**
+ * OpenAI delivers tool arguments as a JSON string, Gemini as an already-parsed
+ * object. Every tool entry point takes either so both providers share one dispatcher.
+ */
+export type ToolArgs = string | JsonRecord;
+
+const asJsonRecord = (value: unknown): JsonRecord =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : {};
+
+export function parseArgs(raw: ToolArgs): JsonRecord {
+  if (typeof raw !== "string") return asJsonRecord(raw);
   try {
-    const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as JsonRecord) : {};
+    return asJsonRecord(JSON.parse(raw) as unknown);
   } catch {
     return {};
   }
@@ -349,6 +385,20 @@ function compactBusiness(business: BusinessListItem): JsonRecord {
     bio: truncate(business.bio, 260),
     openingHours: business.openingHours,
     expertsWithRecommendationCount: business.expertsWithRecommendationCount,
+    distanceMeters: business.distance,
+    deeplink: businessDeeplink(business.id),
+  };
+}
+
+/** Leaderboard rows are read aloud, so they carry only what the sentence needs. */
+function compactTopBusiness(business: BusinessListItem, index: number): JsonRecord {
+  return {
+    rank: index + 1,
+    business_id: business.id,
+    name: business.name,
+    expertsWithRecommendationCount: business.expertsWithRecommendationCount,
+    type: business.primaryBusinessType.name,
+    address: business.address,
     distanceMeters: business.distance,
     deeplink: businessDeeplink(business.id),
   };
@@ -500,7 +550,7 @@ function defaultLocationArgs(args: JsonRecord, context: ToolContext): JsonRecord
   };
 }
 
-export async function runTool(name: string, rawArgs: string, context: ToolContext): Promise<ToolRun> {
+export async function runTool(name: string, rawArgs: ToolArgs, context: ToolContext): Promise<ToolRun> {
   const parsedArgs = defaultLocationArgs(parseArgs(rawArgs), context);
   switch (name) {
     case "search_recommendations": {
@@ -539,6 +589,26 @@ export async function runTool(name: string, rawArgs: string, context: ToolContex
           resolvedFrom: result.resolvedFrom,
           total: result.total,
           businesses: result.businesses.map(compactBusiness),
+        },
+        businesses: result.businesses.map(knownFromBusinessListItem),
+      };
+    }
+    case "top_businesses": {
+      const result = await topBusinesses({
+        locationQuery: stringArg(parsedArgs, "locationQuery"),
+        latitude: numberArg(parsedArgs, "latitude"),
+        longitude: numberArg(parsedArgs, "longitude"),
+        radiusMeters: numberArg(parsedArgs, "radiusMeters") ?? context.radiusMeters,
+        businessType: stringArg(parsedArgs, "businessType"),
+        limit: clamp(numberArg(parsedArgs, "limit"), 10, 1, 25),
+      });
+      return {
+        payload: {
+          header: result.header,
+          resolvedFrom: result.resolvedFrom,
+          radiusMeters: result.radiusMeters,
+          total: result.matchedCount,
+          businesses: result.businesses.map(compactTopBusiness),
         },
         businesses: result.businesses.map(knownFromBusinessListItem),
       };
@@ -648,7 +718,7 @@ async function enrichKnown(ids: string[], known: Map<string, KnownBusiness>): Pr
 }
 
 export async function presentChoices(
-  rawArgs: string,
+  rawArgs: ToolArgs,
   known: Map<string, KnownBusiness>,
 ): Promise<PresentChoicesPayload | UnknownIdsPayload> {
   const args = parseArgs(rawArgs);
@@ -700,7 +770,7 @@ export function toChoicesSnapshot(shown: PresentedChoice[]): ChoicesSnapshot | n
 }
 
 export function openBusiness(
-  rawArgs: string,
+  rawArgs: ToolArgs,
   known: Map<string, KnownBusiness>,
 ): { ok: true; handled_by: "app"; business_id: string; name: string } | UnknownIdsPayload {
   const args = parseArgs(rawArgs);
@@ -717,7 +787,7 @@ export function openBusiness(
 }
 
 export function openExpert(
-  rawArgs: string,
+  rawArgs: ToolArgs,
   known: Map<string, KnownExpert>,
 ):
   | { ok: true; handled_by: "app"; expert_id: string; name: string; deeplink: string }
@@ -747,7 +817,7 @@ export interface ShowOnMapPayload {
 }
 
 export async function showOnMap(
-  rawArgs: string,
+  rawArgs: ToolArgs,
   known: Map<string, KnownBusiness>,
 ): Promise<ShowOnMapPayload | UnknownIdsPayload> {
   const args = parseArgs(rawArgs);

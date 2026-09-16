@@ -37,13 +37,23 @@ services:
       - key: FUTRUMI_DEEPLINK_BASE
         value: https://futrumi.cz
         scope: RUN_TIME
-      # Voice concierge (src/live). OPENAI_API_KEY and LIVE_ACCESS_CODES are
-      # secrets — set them in the DO dashboard, never here.
+      # Voice concierge (src/live). OPENAI_API_KEY, GEMINI_API_KEY and
+      # LIVE_ACCESS_CODES are secrets — set them in the DO dashboard as SECRET
+      # envs, never here. Committing them with a placeholder value would
+      # overwrite the encrypted value on the next deploy.
       - key: LIVE_ENABLED
         value: "true"
         scope: RUN_TIME
       - key: LIVE_BACKEND_MODEL
         value: gpt-5.6-luna
+        scope: RUN_TIME
+      # Gemini Live (provider=gemini). Without the GEMINI_API_KEY secret the
+      # provider answers 503 and the OpenAI path is unaffected.
+      - key: GEMINI_LIVE_MODEL
+        value: gemini-3.8-live
+        scope: RUN_TIME
+      - key: GEMINI_API_VERSION
+        value: v1alpha
         scope: RUN_TIME
       - key: LIVE_MAX_SESSIONS
         value: "3"

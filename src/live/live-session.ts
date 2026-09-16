@@ -3,21 +3,19 @@ import type { LiveCreateResponse } from "openai/resources/live/live";
 import type { ConnectClientEvent, ConnectServerEvent } from "openai/resources/live/sideband/sideband";
 import { SidebandWS } from "openai/resources/live/sideband/ws";
 
+import { type ChoicesSnapshot, type JsonRecord, type ToolContext } from "./tools.js";
 import {
-  DATA_TOOL_NAMES,
-  openBusiness,
-  openExpert,
-  presentChoices,
-  runTool,
-  screenContextPayload,
-  showOnMap,
-  toChoicesSnapshot,
-  type ChoicesSnapshot,
-  type JsonRecord,
-  type KnownBusiness,
-  type KnownExpert,
-  type ToolContext,
-} from "./tools.js";
+  capToolPayload,
+  LiveSessionLimitError,
+  liveSessionCount,
+  maxSessions,
+  maxSessionSeconds,
+  registerLiveSession,
+  ToolSessionState,
+  unregisterLiveSession,
+  type LiveProvider,
+  type LiveSessionRecord,
+} from "./tool-session.js";
 import {
   backendInstructionsWithScreen,
   buildSessionConfig,
@@ -26,9 +24,7 @@ import {
 } from "./session-config.js";
 
 const TRANSCRIPT_FLUSH_MS = 1500;
-const MAX_TOOL_OUTPUT_CHARS = 12000;
 const ACK_TIMEOUT_MS = 4000;
-const DEFAULT_MAX_SESSION_SECONDS = 600;
 
 /**
  * Static instructions do not make the model open the call — measured: it stays
@@ -40,12 +36,6 @@ const GREETING_TEXT = "Ahoj, tady Futrumi. Kam máš chuť?";
 const GREETING_SPOKEN_WINDOW_MS = 10000;
 
 export type ScreenContextTransport = "session.update" | "session.thinking.append";
-
-export class LiveSessionLimitError extends Error {
-  constructor(readonly limit: number) {
-    super(`Too many concurrent live sessions (limit ${limit}).`);
-  }
-}
 
 interface PendingFunctionCall {
   callId: string;
@@ -74,21 +64,6 @@ function readFunctionCall(event: ConnectServerEvent): PendingFunctionCall | null
   return { callId, name, arguments: typeof args === "string" ? args : "{}" };
 }
 
-function positiveIntEnv(name: string, fallback: number): number {
-  const parsed = Number.parseInt(process.env[name] ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function maxSessions(): number {
-  return positiveIntEnv("LIVE_MAX_SESSIONS", 3);
-}
-
-function maxSessionSeconds(): number {
-  return positiveIntEnv("LIVE_MAX_SESSION_SECONDS", DEFAULT_MAX_SESSION_SECONDS);
-}
-
-const registry = new Map<string, LiveConciergeSession>();
-
 let client: OpenAI | null = null;
 
 function openaiClient(): OpenAI {
@@ -96,18 +71,15 @@ function openaiClient(): OpenAI {
   return client;
 }
 
-export class LiveConciergeSession {
+export class LiveConciergeSession implements LiveSessionRecord {
   readonly id: string;
+  readonly provider: LiveProvider = "openai";
+  readonly state: ToolSessionState;
   private readonly shortId: string;
-  private readonly context: ToolContext;
   private readonly ws: SidebandWS;
-  private readonly knownBusinesses = new Map<string, KnownBusiness>();
-  private readonly knownExperts = new Map<string, KnownExpert>();
   private readonly handledCalls = new Set<string>();
   private readonly pendingAcks = new Map<string, PendingAck>();
   private toolQueue: Promise<void> = Promise.resolve();
-  private lastChoices: ChoicesSnapshot | null = null;
-  private lastScreen: string | null = null;
   private transcriptSide: "user" | "assistant" | null = null;
   private transcriptBuffer = "";
   private transcriptTimer: NodeJS.Timeout | null = null;
@@ -120,8 +92,7 @@ export class LiveConciergeSession {
   private constructor(id: string, context: ToolContext, screen: string | null) {
     this.id = id;
     this.shortId = id.slice(-6);
-    this.context = context;
-    this.lastScreen = screen;
+    this.state = new ToolSessionState(context, screen);
     this.ws = new SidebandWS(openaiClient(), { session_id: id });
     this.ws.on("event", (event) => this.handleEvent(event));
     this.ws.on("error", (error) => {
@@ -139,7 +110,7 @@ export class LiveConciergeSession {
     clientContext: LiveClientContext,
   ): Promise<{ result: LiveCreateResponse; session: LiveConciergeSession }> {
     const limit = maxSessions();
-    if (registry.size >= limit) throw new LiveSessionLimitError(limit);
+    if (liveSessionCount() >= limit) throw new LiveSessionLimitError(limit);
 
     const sessionConfig = buildSessionConfig(clientContext);
     const result = await openaiClient().live.create({
@@ -158,19 +129,11 @@ export class LiveConciergeSession {
       context,
       clientContext.screen?.trim() || null,
     );
-    registry.set(session.id, session);
+    registerLiveSession(session);
     session.log(
-      `created voice=${String(sessionConfig.audio?.output?.voice)} client=${clientContext.client ?? "-"} location=${clientContext.location ? "yes" : "no"} screen=${session.lastScreen ? "yes" : "no"}`,
+      `created voice=${String(sessionConfig.audio?.output?.voice)} client=${clientContext.client ?? "-"} location=${clientContext.location ? "yes" : "no"} screen=${session.state.screen ? "yes" : "no"}`,
     );
     return { result, session };
-  }
-
-  get choices(): ChoicesSnapshot | null {
-    return this.lastChoices;
-  }
-
-  get screen(): string | null {
-    return this.lastScreen;
   }
 
   /**
@@ -178,7 +141,7 @@ export class LiveConciergeSession {
    * mode; thinking.append is the fallback when the update is rejected.
    */
   async setScreen(screen: string): Promise<ScreenContextTransport> {
-    this.lastScreen = screen;
+    this.state.setScreen(screen);
     const eventId = `screen-${(this.ackSeq += 1)}`;
     try {
       await this.sendAndAwaitAck(
@@ -338,16 +301,11 @@ export class LiveConciergeSession {
     const started = Date.now();
     let output: string;
     try {
-      output = JSON.stringify(await this.toolResult(call));
+      output = capToolPayload(await this.state.execute(call.name, call.arguments)).json;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[live ${this.shortId}] tool ${call.name} failed`, error);
       output = JSON.stringify({ error: message });
-    }
-    if (output.length > MAX_TOOL_OUTPUT_CHARS) {
-      output = JSON.stringify({
-        error: "Result too large to send. Ask for fewer items (limit 3).",
-      });
     }
     this.log(
       `tool ${call.name} args=${call.arguments} out=${output.length}B ${Date.now() - started}ms`,
@@ -356,33 +314,6 @@ export class LiveConciergeSession {
     this.ws.send({ type: "response.item.create", item: { type: "function_call_output", call_id: call.callId, output } });
     // Appending a result never resumes the delegated response on its own.
     this.ws.send({ type: "response.create" });
-  }
-
-  private async toolResult(call: PendingFunctionCall): Promise<unknown> {
-    if (DATA_TOOL_NAMES.has(call.name)) {
-      const run = await runTool(call.name, call.arguments, this.context);
-      for (const business of run.businesses) this.knownBusinesses.set(business.business_id, business);
-      for (const expert of run.experts ?? []) this.knownExperts.set(expert.expert_id, expert);
-      return run.payload;
-    }
-    if (call.name === "get_screen_context") {
-      return screenContextPayload(this.lastScreen);
-    }
-    if (call.name === "present_choices") {
-      const payload = await presentChoices(call.arguments, this.knownBusinesses);
-      if (payload.ok) this.lastChoices = toChoicesSnapshot(payload.shown) ?? this.lastChoices;
-      return payload;
-    }
-    if (call.name === "open_business") {
-      return openBusiness(call.arguments, this.knownBusinesses);
-    }
-    if (call.name === "open_expert") {
-      return openExpert(call.arguments, this.knownExperts);
-    }
-    if (call.name === "show_on_map") {
-      return showOnMap(call.arguments, this.knownBusinesses);
-    }
-    return { error: `Unknown tool: ${call.name}` };
   }
 
   private appendTranscript(side: "user" | "assistant", delta: string): void {
@@ -418,19 +349,11 @@ export class LiveConciergeSession {
     for (const eventId of [...this.pendingAcks.keys()]) {
       this.settleAck(eventId, new Error("Session closed before acknowledgement."));
     }
-    registry.delete(this.id);
+    unregisterLiveSession(this.id);
     try {
       this.ws.close();
     } catch {
       // Socket may already be gone; nothing left to clean up.
     }
   }
-}
-
-export function getLiveSession(id: string): LiveConciergeSession | undefined {
-  return registry.get(id);
-}
-
-export function liveSessionCount(): number {
-  return registry.size;
 }
