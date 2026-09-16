@@ -2,8 +2,13 @@ import { DATA_TOOLS, runTool } from "../live/tools.js";
 import type { ConciergeRequest } from "./decision-engine.js";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
-const DEFAULT_MODEL = "gpt-5";
+// The job is tool routing plus a few sentences of Czech; a mini-class model with
+// low reasoning effort covers that. OPENAI_MODEL overrides for quality comparisons.
+const DEFAULT_MODEL = "gpt-5-mini";
 const DEFAULT_MAX_TOOL_ROUNDS = 4;
+// The visible answer is a handful of lines; the rest of the old 1400 budget was
+// silently available to billed reasoning tokens.
+const MAX_OUTPUT_TOKENS = 600;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -23,8 +28,15 @@ type OpenAIOutputItem = MessageOutput | FunctionCallOutput | JsonRecord;
 
 interface OpenAIResponse {
   id: string;
+  model?: string;
   output?: OpenAIOutputItem[];
   output_text?: string;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    input_tokens_details?: { cached_tokens?: number };
+    output_tokens_details?: { reasoning_tokens?: number };
+  };
   error?: { message?: string };
 }
 
@@ -81,7 +93,9 @@ async function createResponse(input: ResponseInputItem[]): Promise<OpenAIRespons
       tools: DATA_TOOLS,
       tool_choice: "auto",
       parallel_tool_calls: false,
-      max_output_tokens: 1400,
+      max_output_tokens: MAX_OUTPUT_TOKENS,
+      reasoning: { effort: "low" },
+      text: { verbosity: "low" },
     }),
   });
 
@@ -91,7 +105,19 @@ async function createResponse(input: ResponseInputItem[]): Promise<OpenAIRespons
 
   const data = (await response.json()) as OpenAIResponse;
   if (data.error?.message) throw new Error(data.error.message);
+  logUsage(data);
   return data;
+}
+
+/** Stderr so the CLI answer on stdout stays clean; reasoning tokens bill as output. */
+function logUsage(response: OpenAIResponse): void {
+  const usage = response.usage;
+  if (!usage) return;
+  const cached = usage.input_tokens_details?.cached_tokens ?? 0;
+  const reasoning = usage.output_tokens_details?.reasoning_tokens ?? 0;
+  console.error(
+    `[concierge usage] model=${response.model ?? "?"} in=${usage.input_tokens ?? 0} (cached ${cached}) out=${usage.output_tokens ?? 0} (reasoning ${reasoning})`,
+  );
 }
 
 const SYSTEM_PROMPT = `Jsi Futrumi premium concierge: rozhodný, vkusný a praktický průvodce českým gastrem.
