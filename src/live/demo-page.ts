@@ -1,3 +1,5 @@
+import { DEFAULT_GEMINI_VOICE, GEMINI_VOICES } from "./session-config.js";
+
 const VOICE_OPTIONS: ReadonlyArray<{ name: string; isNew: boolean }> = [
   { name: "alloy", isNew: false },
   { name: "ash", isNew: false },
@@ -27,6 +29,14 @@ const voiceOptionsHtml = VOICE_OPTIONS.map(
   ({ name, isNew }) =>
     `<option value="${name}"${name === "marin" ? " selected" : ""}>${name}${isNew ? " *" : ""}</option>`,
 ).join("");
+
+const geminiVoiceOptionsHtml = GEMINI_VOICES.map(
+  (name) => `<option value="${name}"${name === DEFAULT_GEMINI_VOICE ? " selected" : ""}>${name}</option>`,
+).join("");
+
+// Pinned: the demo drives the Live websocket through the official SDK so the wire
+// format cannot drift from what the server's ephemeral token was minted for.
+const GENAI_CDN_URL = "https://cdn.jsdelivr.net/npm/@google/genai@2.22.0/+esm";
 
 export const DEMO_PAGE = `<!doctype html>
 <html lang="cs">
@@ -98,12 +108,18 @@ export const DEMO_PAGE = `<!doctype html>
 </head>
 <body>
 <main>
-  <h1>Futrumi hlasový concierge<span>gpt-live-1 + Futrumi doporučení · lokální demo</span></h1>
+  <h1>Futrumi hlasový concierge<span>gpt-live-1 / gemini-3.8-live + Futrumi doporučení · lokální demo</span></h1>
 
   <section class="panel controls">
     <div class="row">
+      <label for="provider">Provider</label>
+      <select id="provider">
+        <option value="openai" selected>OpenAI (WebRTC)</option>
+        <option value="gemini">Gemini (WebSocket)</option>
+      </select>
       <label for="voice">Hlas</label>
       <select id="voice">${voiceOptionsHtml}</select>
+      <select id="geminiVoice" hidden>${geminiVoiceOptionsHtml}</select>
       <button id="start" class="primary">Začít hovor</button>
       <button id="stop" disabled>Ukončit</button>
     </div>
@@ -140,7 +156,9 @@ export const DEMO_PAGE = `<!doctype html>
 
 <script>
 const els = {
+  provider: document.getElementById("provider"),
   voice: document.getElementById("voice"),
+  geminiVoice: document.getElementById("geminiVoice"),
   start: document.getElementById("start"),
   stop: document.getElementById("stop"),
   useLocation: document.getElementById("useLocation"),
@@ -161,6 +179,12 @@ let peer = null;
 let events = null;
 let microphone = null;
 let sessionId = null;
+let geminiSession = null;
+let captureContext = null;
+let playbackContext = null;
+let captureNode = null;
+let nextPlayAt = 0;
+const activeSources = [];
 let ready = false;
 let finalized = false;
 let closeTimeout = null;
@@ -189,6 +213,24 @@ function authHeaders() {
   const code = els.accessCode.value.trim();
   return code ? { "x-live-access-code": code } : {};
 }
+
+function currentProvider() {
+  return els.provider.value === "gemini" ? "gemini" : "openai";
+}
+
+function selectedVoice() {
+  return currentProvider() === "gemini" ? els.geminiVoice.value : els.voice.value;
+}
+
+function syncProviderControls() {
+  const gemini = currentProvider() === "gemini";
+  els.voice.hidden = gemini;
+  els.geminiVoice.hidden = !gemini;
+  els.audio.hidden = gemini;
+}
+
+els.provider.addEventListener("change", syncProviderControls);
+syncProviderControls();
 
 function setStatus(text, live) {
   els.status.textContent = text;
@@ -340,25 +382,32 @@ async function showOnMap(businessId, callId) {
   window.open("https://futrumi.cz/business/" + businessId, "_blank", "noopener");
 }
 
-function handleFunctionCall(item) {
-  if (!item || item.type !== "function_call") return;
-  if (item.name === "present_choices") {
+// The server answers every app tool itself; the UI reacts to the same call so the
+// voice never waits for the screen. Shared by both providers — OpenAI delivers the
+// arguments as a JSON string, Gemini as an object.
+function applyUiTool(name, args, callId) {
+  if (name === "present_choices") {
     void fetchChoices();
     return;
   }
+  if (name === "open_business" && args.business_id) {
+    highlightAndOpen(args.business_id, callId);
+    return;
+  }
+  if (name === "open_expert" && args.expert_id) {
+    openExpertProfile(args.expert_id, callId);
+    return;
+  }
+  if (name === "show_on_map" && args.business_id) {
+    void showOnMap(args.business_id, callId);
+  }
+}
+
+function handleFunctionCall(item) {
+  if (!item || item.type !== "function_call") return;
   let args = {};
   try { args = JSON.parse(item.arguments || "{}"); } catch { args = {}; }
-  if (item.name === "open_business" && args.business_id) {
-    highlightAndOpen(args.business_id, item.call_id);
-    return;
-  }
-  if (item.name === "open_expert" && args.expert_id) {
-    openExpertProfile(args.expert_id, item.call_id);
-    return;
-  }
-  if (item.name === "show_on_map" && args.business_id) {
-    void showOnMap(args.business_id, item.call_id);
-  }
+  applyUiTool(item.name, args, item.call_id);
 }
 
 function handleEvent(event) {
@@ -412,11 +461,27 @@ function cleanup() {
   events = null;
   if (peer) peer.close();
   peer = null;
+  geminiSession = null;
+  stopPlayback();
+  if (captureNode) {
+    captureNode.port.onmessage = null;
+    captureNode.disconnect();
+    captureNode = null;
+  }
+  if (captureContext) {
+    void captureContext.close().catch(() => undefined);
+    captureContext = null;
+  }
+  if (playbackContext) {
+    void playbackContext.close().catch(() => undefined);
+    playbackContext = null;
+  }
   els.audio.srcObject = null;
   ready = false;
   sessionId = null;
   lastBubble = null;
   els.start.disabled = false;
+  els.provider.disabled = false;
   els.stop.disabled = true;
 }
 
@@ -455,15 +520,208 @@ async function waitForIce(connection) {
   });
 }
 
-els.start.addEventListener("click", async () => {
-  els.start.disabled = true;
-  finalized = false;
-  openedCalls.clear();
-  lastShown = [];
-  els.cards.replaceChildren();
-  els.usage.textContent = "";
-  setStatus("Připojuji…");
+// --- Gemini: audio is carried on the same websocket, so the demo does the PCM
+// conversion the WebRTC path got for free. In 16 kHz out, 24 kHz back.
+
+const WORKLET_SOURCE =
+  'class PcmCapture extends AudioWorkletProcessor {' +
+  '  process(inputs) {' +
+  '    const channel = inputs[0] && inputs[0][0];' +
+  '    if (channel) this.port.postMessage(new Float32Array(channel));' +
+  '    return true;' +
+  '  }' +
+  '}' +
+  'registerProcessor("pcm-capture", PcmCapture);';
+
+function floatToPcm16Base64(samples) {
+  const pcm = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i += 1) {
+    const clamped = Math.max(-1, Math.min(1, samples[i]));
+    pcm[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+  }
+  const bytes = new Uint8Array(pcm.buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function base64ToPcm16(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Int16Array(bytes.buffer, 0, Math.floor(bytes.length / 2));
+}
+
+function stopPlayback() {
+  for (const source of activeSources) {
+    try { source.stop(); } catch (error) { /* already finished */ }
+  }
+  activeSources.length = 0;
+  nextPlayAt = 0;
+}
+
+function playPcmChunk(value) {
+  if (!playbackContext) return;
+  const pcm = base64ToPcm16(value);
+  if (pcm.length === 0) return;
+  const buffer = playbackContext.createBuffer(1, pcm.length, 24000);
+  const channel = buffer.getChannelData(0);
+  for (let i = 0; i < pcm.length; i += 1) channel[i] = pcm[i] / 32768;
+  const source = playbackContext.createBufferSource();
+  source.buffer = buffer;
+  source.connect(playbackContext.destination);
+  const now = playbackContext.currentTime;
+  // A small lead keeps consecutive chunks from butting into the past and clicking.
+  if (nextPlayAt < now) nextPlayAt = now + 0.06;
+  source.start(nextPlayAt);
+  nextPlayAt += buffer.duration;
+  activeSources.push(source);
+  source.addEventListener("ended", () => {
+    const index = activeSources.indexOf(source);
+    if (index >= 0) activeSources.splice(index, 1);
+  });
+}
+
+async function relayTool(name, args) {
+  const response = await fetch("/live/session/" + encodeURIComponent(sessionId) + "/tool", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ name: name, args: args || {} }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) return { error: payload.error || "tool relay failed" };
+  return payload.result;
+}
+
+async function handleGeminiToolCall(toolCall) {
+  const calls = Array.isArray(toolCall.functionCalls) ? toolCall.functionCalls : [];
+  const functionResponses = [];
+  for (const call of calls) {
+    const args = call.args || {};
+    const result = await relayTool(call.name, args);
+    functionResponses.push({ id: call.id, name: call.name, response: { output: result } });
+    applyUiTool(call.name, args, call.id);
+  }
+  if (functionResponses.length > 0 && geminiSession) {
+    geminiSession.sendToolResponse({ functionResponses: functionResponses });
+  }
+}
+
+function handleGeminiMessage(message) {
+  logRaw(message);
+  if (message.setupComplete) {
+    ready = true;
+    els.stop.disabled = false;
+    setStatus("Mluv.", true);
+    return;
+  }
+  const content = message.serverContent;
+  if (content) {
+    if (content.interrupted) stopPlayback();
+    if (content.inputTranscription && content.inputTranscription.text) {
+      appendTranscript("user", content.inputTranscription.text);
+    }
+    if (content.outputTranscription && content.outputTranscription.text) {
+      appendTranscript("assistant", content.outputTranscription.text);
+    }
+    const parts = content.modelTurn && content.modelTurn.parts ? content.modelTurn.parts : [];
+    for (const part of parts) {
+      if (part.inlineData && part.inlineData.data) playPcmChunk(part.inlineData.data);
+    }
+  }
+  if (message.toolCall) void handleGeminiToolCall(message.toolCall);
+  if (message.usageMetadata) showUsage(message.usageMetadata);
+  if (message.goAway) setStatus("Gemini ukončuje spojení…");
+}
+
+async function startMicrophoneCapture(session) {
+  captureContext = new AudioContext({ sampleRate: 16000 });
+  const workletUrl = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: "application/javascript" }));
   try {
+    await captureContext.audioWorklet.addModule(workletUrl);
+  } finally {
+    URL.revokeObjectURL(workletUrl);
+  }
+  const source = captureContext.createMediaStreamSource(microphone);
+  captureNode = new AudioWorkletNode(captureContext, "pcm-capture");
+  captureNode.port.onmessage = (event) => {
+    if (!session) return;
+    try {
+      session.sendRealtimeInput({
+        audio: { data: floatToPcm16Base64(event.data), mimeType: "audio/pcm;rate=16000" },
+      });
+    } catch (error) {
+      console.warn("realtime input failed", error);
+    }
+  };
+  source.connect(captureNode);
+  // Chrome keeps a worklet with no downstream connection from pulling audio.
+  const silence = captureContext.createGain();
+  silence.gain.value = 0;
+  captureNode.connect(silence);
+  silence.connect(captureContext.destination);
+}
+
+async function startGemini() {
+  const location = await currentPosition();
+  setStatus("Zakládám session…");
+  const response = await fetch("/live/session", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authHeaders() },
+    body: JSON.stringify({
+      provider: "gemini",
+      voice: selectedVoice(),
+      locale: navigator.language,
+      client: "web",
+      ...(location ? { location } : {}),
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((payload.error || "Chyba serveru") + (payload.detail ? " — " + payload.detail : ""));
+  }
+
+  sessionId = payload.session.id;
+  setStatus("Připojuji k Gemini…");
+
+  const genai = await import("${GENAI_CDN_URL}");
+  // The ephemeral token is the API key; the SDK recognises the auth_tokens/ prefix
+  // and switches to the constrained endpoint on its own.
+  const ai = new genai.GoogleGenAI({
+    apiKey: payload.gemini.token,
+    httpOptions: { apiVersion: "v1alpha" },
+  });
+
+  microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
+  playbackContext = new AudioContext({ sampleRate: 24000 });
+  nextPlayAt = 0;
+
+  geminiSession = await ai.live.connect({
+    model: payload.gemini.model,
+    // Empty on purpose: model, instructions, tools and voice are locked into the token.
+    config: {},
+    callbacks: {
+      onmessage: handleGeminiMessage,
+      onerror: (error) => {
+        console.warn("gemini socket error", error);
+        setStatus("Chyba spojení s Gemini.");
+      },
+      onclose: (event) => {
+        finalized = true;
+        setStatus("Ukončeno" + (event && event.reason ? ": " + event.reason : "."));
+        cleanup();
+      },
+    },
+  });
+
+  await startMicrophoneCapture(geminiSession);
+  startedAt = Date.now();
+  tickTimer();
+  timerHandle = setInterval(tickTimer, 1000);
+  setStatus("Připojeno, čekám na start…");
+}
+
+async function startOpenAi() {
     const location = await currentPosition();
     const connection = new RTCPeerConnection();
     peer = connection;
@@ -511,16 +769,43 @@ els.start.addEventListener("click", async () => {
     tickTimer();
     timerHandle = setInterval(tickTimer, 1000);
     setStatus("Připojeno, čekám na start…");
+}
+
+els.start.addEventListener("click", async () => {
+  els.start.disabled = true;
+  els.provider.disabled = true;
+  finalized = false;
+  openedCalls.clear();
+  lastShown = [];
+  els.cards.replaceChildren();
+  els.usage.textContent = "";
+  setStatus("Připojuji…");
+  try {
+    if (currentProvider() === "gemini") await startGemini();
+    else await startOpenAi();
   } catch (error) {
     setStatus(error instanceof Error ? error.message : String(error));
     cleanup();
   }
 });
 
+function closeGemini() {
+  if (!geminiSession) return;
+  try { geminiSession.close(); } catch (error) { console.warn("gemini close failed", error); }
+}
+
 els.stop.addEventListener("click", () => {
-  if (!ready || !events || events.readyState !== "open") { cleanup(); return; }
   els.stop.disabled = true;
   setStatus("Ukončuji…");
+  if (currentProvider() === "gemini") {
+    closeGemini();
+    closeTimeout = setTimeout(() => {
+      setStatus("Nepřišel onclose, zavírám natvrdo.");
+      cleanup();
+    }, 5000);
+    return;
+  }
+  if (!ready || !events || events.readyState !== "open") { cleanup(); return; }
   events.send(JSON.stringify({ type: "session.close" }));
   closeTimeout = setTimeout(() => {
     setStatus("Nepřišel session.closed, zavírám natvrdo.");
@@ -530,6 +815,7 @@ els.stop.addEventListener("click", () => {
 
 window.addEventListener("beforeunload", () => {
   if (events && events.readyState === "open") events.send(JSON.stringify({ type: "session.close" }));
+  closeGemini();
   cleanup();
 });
 </script>

@@ -43,6 +43,7 @@ Server listens on `http://localhost:8080/mcp`. Test with `npx @modelcontextproto
 |---|---|
 | `search_recommendations` | Intent-shaped search ("tipy na X v Y") with local semantic/concept ranking |
 | `find_recommendations_near` | Geo lookup near coords or place name |
+| `top_businesses` | Leaderboard of an area by how many experts recommend each place |
 | `get_recommendation` | Full recommendation detail with expert quote, meals, photos |
 | `get_business` | Full business detail with all expert recommendations |
 | `get_expert` | Expert profile + their recommendations |
