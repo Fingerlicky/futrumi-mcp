@@ -125,7 +125,7 @@ export const DATA_TOOLS: FunctionTool[] = [
       properties: {
         locationQuery: {
           type: "string",
-          description: 'Město, čtvrť nebo kraj, např. "Brno" nebo "Jihomoravský kraj".',
+          description: 'Město, čtvrť nebo kraj, např. "Brno" nebo "Jihomoravský kraj". Vynech pro žebříček přes celou republiku.',
         },
         latitude: { type: "number" },
         longitude: { type: "number" },

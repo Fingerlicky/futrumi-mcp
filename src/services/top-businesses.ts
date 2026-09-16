@@ -58,19 +58,54 @@ function byRecommendationCount(a: BusinessListItem, b: BusinessListItem): number
   return delta !== 0 ? delta : a.distance - b.distance;
 }
 
+// The whole catalog is ~800 businesses, so a country-wide ranking pages through
+// everything; the area ceiling stays lower to keep local answers fast.
+const COUNTRY_CANDIDATE_CEILING = 1_500;
+
+const COUNTRY_QUERIES = new Set(
+  [
+    "cesko",
+    "ceska republika",
+    "cela ceska republika",
+    "cele cesko",
+    "cela cr",
+    "cr",
+    "republika",
+    "czechia",
+    "czech republic",
+    "cesko a slovensko",
+  ].map(normalize),
+);
+
+const isCountryWide = (input: TopBusinessesInput): boolean => {
+  if (typeof input.latitude === "number" || typeof input.longitude === "number") return false;
+  const query = input.locationQuery?.trim();
+  return !query || COUNTRY_QUERIES.has(normalize(query));
+};
+
 export async function topBusinesses(input: TopBusinessesInput): Promise<TopBusinessesResult> {
   const limit = input.limit ?? 10;
-  const { location, resolvedFrom, suggestedRadiusMeters } = await resolveLocation({
-    latitude: input.latitude,
-    longitude: input.longitude,
-    locationQuery: input.locationQuery,
-  });
+  const countryWide = isCountryWide(input);
+  const resolved = countryWide
+    ? null
+    : await resolveLocation({
+        latitude: input.latitude,
+        longitude: input.longitude,
+        locationQuery: input.locationQuery,
+      });
   // A ranking question is about an area, not a doorstep, so the floor is wider
   // than find_recommendations_near's 1500 m.
-  const radiusMeters = input.radiusMeters ?? Math.max(suggestedRadiusMeters ?? 0, 5000);
+  const radiusMeters = resolved
+    ? (input.radiusMeters ?? Math.max(resolved.suggestedRadiusMeters ?? 0, 5000))
+    : 0;
+  const resolvedFrom = resolved?.resolvedFrom ?? "celá databáze";
   const businessType = input.businessType?.trim() || undefined;
 
-  const filter = { center: location, distance: radiusMeters, open: false };
+  // Without a center the backend returns the whole catalog.
+  const filter = resolved
+    ? { center: resolved.location, distance: radiusMeters, open: false }
+    : { open: false };
+  const location = resolved?.location ?? null;
   const fetchPage = async (pageNumber: number, pageSize: number) => {
     const data = await gqlRequest<{
       recommendedBusinesses: { total: number; edges: BusinessListItem[] };
@@ -82,8 +117,8 @@ export async function topBusinesses(input: TopBusinessesInput): Promise<TopBusin
     return data.recommendedBusinesses;
   };
 
-  const pageSize = candidatePageSize();
-  const ceiling = Math.max(limit, candidateCeiling());
+  const pageSize = countryWide ? 500 : candidatePageSize();
+  const ceiling = Math.max(limit, countryWide ? COUNTRY_CANDIDATE_CEILING : candidateCeiling());
   const firstPage = await fetchPage(0, Math.min(ceiling, pageSize));
 
   const candidates = [...firstPage.edges];
@@ -110,9 +145,11 @@ export async function topBusinesses(input: TopBusinessesInput): Promise<TopBusin
   );
   const ranked = matched.sort(byRecommendationCount).slice(0, limit);
 
-  const radiusKm = (radiusMeters / 1000).toFixed(1).replace(".", ",");
   const typePart = businessType ? ` (${businessType})` : "";
-  const header = `Nejdoporučovanější podniky${typePart} do ${radiusKm} km od ${resolvedFrom} (${ranked.length} z ${matched.length} v okolí, prohledáno ${unique.size} z ${firstPage.total})`;
+  const scopePart = countryWide
+    ? "v celé databázi (Česko i Slovensko)"
+    : `do ${(radiusMeters / 1000).toFixed(1).replace(".", ",")} km od ${resolvedFrom}`;
+  const header = `Nejdoporučovanější podniky${typePart} ${scopePart} (${ranked.length} z ${matched.length}, prohledáno ${unique.size} z ${firstPage.total})`;
 
   return {
     businesses: ranked,
