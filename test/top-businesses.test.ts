@@ -169,3 +169,41 @@ test("an empty area returns nothing instead of throwing", async () => {
   assert.deepEqual(result.businesses, []);
   assert.equal(result.matchedCount, 0);
 });
+
+test("no location scans the whole catalog without a center filter", async () => {
+  const all = [
+    ...filler(700),
+    { id: "winner", name: "U Kalendů", type: "Restaurace", experts: 14, distance: 0 },
+  ];
+  let sawCenter = false;
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    if (body.variables.filter.center) sawCenter = true;
+    const { pageNumber, pageSize } = body.variables.pagination;
+    calls.push({ pageNumber, pageSize });
+    const start = pageNumber * pageSize;
+    const edges = all.slice(start, start + pageSize).map(edge);
+    return new Response(
+      JSON.stringify({ data: { recommendedBusinesses: { total: all.length, edges } } }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof globalThis.fetch;
+
+  const result = await topBusinesses({});
+
+  assert.equal(sawCenter, false, "country-wide must not send a center");
+  assert.equal(result.businesses[0]?.name, "U Kalendů");
+  assert.equal(result.candidateCount, 701, "the whole catalog must be scanned");
+  assert.ok(result.header.includes("celé databázi"));
+});
+
+test('a country name in locationQuery means the whole catalog too', async () => {
+  stubBackend([
+    { id: "a", name: "A", type: "Restaurace", experts: 3, distance: 0 },
+  ]);
+
+  const result = await topBusinesses({ locationQuery: "celá Česká republika" });
+
+  assert.equal(result.resolvedFrom, "celá databáze");
+  assert.equal(result.businesses[0]?.name, "A");
+});
