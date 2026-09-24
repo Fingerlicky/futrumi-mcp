@@ -164,3 +164,58 @@ test("an oversized tool result is replaced, not sent", () => {
   assert.ok(huge.json.length < MAX_TOOL_OUTPUT_CHARS);
   assert.match((huge.value as { error: string }).error, /too large/i);
 });
+
+// find_food_along_route is computed by the app. Its stops must become names the
+// model may present or open, and an answer must reach the waiting call whether
+// it lands before or after the sideband asks for it.
+
+const routeResult = {
+  destination: "Vimperk",
+  stops: [
+    { business_id: "triko", name: "Triko Tábor", detour_minutes: 6, latitude: 49.41, longitude: 14.66 },
+    { name: "missing id" },
+  ],
+};
+
+test("a client tool relayed with its result registers the stops", async () => {
+  const response = await liveRoutes.request(`/live/session/${SESSION_ID}/tool`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "find_food_along_route", args: { destination: "Vimperk" }, result: routeResult }),
+  });
+  const body = (await response.json()) as { result: typeof routeResult };
+  assert.equal(body.result.destination, "Vimperk");
+  assert.deepEqual([...session.state.knownBusinesses.keys()], ["triko"]);
+
+  const open = await callTool("open_business", { business_id: "triko" });
+  const opened = (await open.json()) as { result: { ok: boolean } };
+  assert.equal(opened.result.ok, true);
+});
+
+test("a client result posted before the call is picked up", async () => {
+  const posted = await liveRoutes.request(`/live/session/${SESSION_ID}/client-result`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ call_id: "call_early", result: routeResult }),
+  });
+  assert.equal(posted.status, 204);
+
+  const result = await session.state.execute("find_food_along_route", "{}", { callId: "call_early" });
+  assert.deepEqual(result, routeResult);
+});
+
+test("a waiting call resolves when the client result arrives", async () => {
+  const pending = session.state.execute("find_food_along_route", "{}", { callId: "call_late" });
+  session.state.deliverClientResult("call_late", routeResult);
+  assert.deepEqual(await pending, routeResult);
+  assert.ok(session.state.knownBusinesses.has("triko"));
+});
+
+test("a client result needs a call id", async () => {
+  const response = await liveRoutes.request(`/live/session/${SESSION_ID}/client-result`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ result: routeResult }),
+  });
+  assert.equal(response.status, 400);
+});

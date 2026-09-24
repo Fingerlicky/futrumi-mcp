@@ -1,5 +1,7 @@
 import {
+  CLIENT_TOOL_NAMES,
   DATA_TOOL_NAMES,
+  knownFromRouteResult,
   openBusiness,
   openExpert,
   presentChoices,
@@ -19,6 +21,15 @@ export type LiveProvider = "openai" | "gemini";
 export const MAX_TOOL_OUTPUT_CHARS = 12000;
 
 const DEFAULT_MAX_SESSION_SECONDS = 600;
+
+// Apple Maps routing plus a handful of detour legs; past this the model gets an error to speak around.
+const CLIENT_RESULT_TIMEOUT_MS = 30_000;
+
+/** How the app answered a client tool: posted by call id (OpenAI) or inline with the relay (Gemini). */
+export interface ClientToolAnswer {
+  callId?: string;
+  result?: unknown;
+}
 
 export class LiveSessionLimitError extends Error {
   constructor(readonly limit: number) {
@@ -66,6 +77,9 @@ export class ToolSessionState {
   readonly knownExperts = new Map<string, KnownExpert>();
   private lastChoices: ChoicesSnapshot | null = null;
   private lastScreen: string | null;
+  // The app sees the call on its data channel about when the sideband does, so a result may land first.
+  private readonly earlyClientResults = new Map<string, unknown>();
+  private readonly clientWaiters = new Map<string, (result: unknown) => void>();
 
   constructor(
     readonly context: ToolContext,
@@ -86,7 +100,24 @@ export class ToolSessionState {
     this.lastScreen = screen;
   }
 
-  async execute(name: string, args: ToolArgs): Promise<unknown> {
+  deliverClientResult(callId: string, result: unknown): void {
+    const waiter = this.clientWaiters.get(callId);
+    if (waiter) {
+      this.clientWaiters.delete(callId);
+      waiter(result);
+      return;
+    }
+    this.earlyClientResults.set(callId, result);
+  }
+
+  async execute(name: string, args: ToolArgs, answer: ClientToolAnswer = {}): Promise<unknown> {
+    if (CLIENT_TOOL_NAMES.has(name)) {
+      const result = await this.clientResult(answer);
+      for (const business of knownFromRouteResult(result)) {
+        this.knownBusinesses.set(business.business_id, business);
+      }
+      return result;
+    }
     if (DATA_TOOL_NAMES.has(name)) {
       const run = await runTool(name, args, this.context);
       for (const business of run.businesses) {
@@ -113,6 +144,27 @@ export class ToolSessionState {
       return showOnMap(args, this.knownBusinesses);
     }
     return { error: `Unknown tool: ${name}` };
+  }
+
+  private clientResult({ callId, result }: ClientToolAnswer): Promise<unknown> {
+    if (result !== undefined) return Promise.resolve(result);
+    if (!callId) return Promise.resolve({ error: "Tenhle nástroj počítá aplikace a výsledek nepřišel." });
+    if (this.earlyClientResults.has(callId)) {
+      const early = this.earlyClientResults.get(callId);
+      this.earlyClientResults.delete(callId);
+      return Promise.resolve(early);
+    }
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.clientWaiters.delete(callId);
+        resolve({ error: "Aplikace trasu nespočítala včas. Zkus to znovu, nebo zjednoduš cíl." });
+      }, CLIENT_RESULT_TIMEOUT_MS);
+      timer.unref?.();
+      this.clientWaiters.set(callId, (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      });
+    });
   }
 }
 

@@ -301,7 +301,7 @@ export class LiveConciergeSession implements LiveSessionRecord {
     const started = Date.now();
     let output: string;
     try {
-      output = capToolPayload(await this.state.execute(call.name, call.arguments)).json;
+      output = capToolPayload(await this.state.execute(call.name, call.arguments, { callId: call.callId })).json;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[live ${this.shortId}] tool ${call.name} failed`, error);

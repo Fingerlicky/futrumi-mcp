@@ -296,12 +296,53 @@ export const APP_TOOLS: FunctionTool[] = [
   },
 ];
 
-export const LIVE_TOOLS: FunctionTool[] = [...DATA_TOOLS, ...SESSION_TOOLS, ...APP_TOOLS];
+/** Computed by the app (Apple Maps routing is free there and unavailable here); the server only waits for the result. */
+export const CLIENT_TOOLS: FunctionTool[] = [
+  {
+    type: "function",
+    name: "find_food_along_route",
+    description:
+      "Najde doporučené podniky po cestě autem a spočítá, o kolik minut zajížďka prodlouží cestu a kde na trase podnik leží. Použij na „jedu do X, je po cestě něco dobrého?“, „kde se cestou najíst“. Trasu počítá aplikace přes Apple Mapy.",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        destination: { type: "string", description: 'Cíl cesty, např. "Vimperk" nebo "Šumava, Kvilda".' },
+        origin: { type: "string", description: "Start cesty. Vynech, když jede odsud (aktuální poloha)." },
+        via: { type: "string", description: 'Místo, přes které uživatel jede, když ho zmíní, např. "Tábor".' },
+        avoid_tolls: {
+          type: "boolean",
+          description: "true, když uživatel nemá dálniční známku. Vynech, když to neřekl — aplikace použije uloženou odpověď.",
+        },
+        departure_time: {
+          type: "string",
+          description: "Čas odjezdu v ISO 8601 s časovou zónou, např. 2026-09-25T08:00:00+02:00. Vynech pro odjezd hned.",
+        },
+        stop_position: {
+          type: "string",
+          enum: ["middle", "early", "late", "anywhere"],
+          description: "Kde na trase chce zastavit. Výchozí middle (zhruba 25–80 % cesty), i když jen řekne, že nechce hned na začátku. late jen na výslovné „až ke konci“.",
+        },
+        kind: {
+          type: "string",
+          enum: ["food", "coffee", "any"],
+          description: "food = najíst se (výchozí), coffee = kavárny a cukrárny, any = cokoli včetně farem a obchodů.",
+        },
+        max_detour_minutes: { type: "integer", minimum: 5, maximum: 90, description: "Výchozí 30." },
+      },
+      required: ["destination"],
+      additionalProperties: false,
+    },
+  },
+];
+
+export const LIVE_TOOLS: FunctionTool[] = [...DATA_TOOLS, ...SESSION_TOOLS, ...APP_TOOLS, ...CLIENT_TOOLS];
 
 export const LIVE_TOOL_NAMES = new Set(LIVE_TOOLS.map((tool) => tool.name));
 export const DATA_TOOL_NAMES = new Set(DATA_TOOLS.map((tool) => tool.name));
 export const SESSION_TOOL_NAMES = new Set(SESSION_TOOLS.map((tool) => tool.name));
 export const APP_TOOL_NAMES = new Set(APP_TOOLS.map((tool) => tool.name));
+export const CLIENT_TOOL_NAMES = new Set(CLIENT_TOOLS.map((tool) => tool.name));
 
 const truncate = (text: string | null | undefined, max: number): string | null => {
   if (!text) return null;
@@ -852,4 +893,28 @@ export async function showOnMap(
       longitude: typeof match.longitude === "number" ? match.longitude : null,
     },
   };
+}
+
+/** The app reports stops it found; registering them lets present_choices and open_business name them. */
+export function knownFromRouteResult(result: unknown): KnownBusiness[] {
+  const stops = asJsonRecord(result).stops;
+  if (!Array.isArray(stops)) return [];
+  return stops.flatMap((raw) => {
+    const stop = asJsonRecord(raw);
+    const id = stringArg(stop, "business_id");
+    const name = stringArg(stop, "name");
+    if (!id || !name) return [];
+    const latitude = numberArg(stop, "latitude");
+    const longitude = numberArg(stop, "longitude");
+    return [
+      {
+        business_id: id,
+        name,
+        expert: null,
+        quote: null,
+        deeplink: businessDeeplink(id),
+        ...(latitude !== undefined && longitude !== undefined ? { latitude, longitude } : {}),
+      },
+    ];
+  });
 }

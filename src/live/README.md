@@ -255,7 +255,46 @@ písmena (`OBJECT`, `STRING`), `minItems`/`maxItems` na stringy a
 Data tooly: `search_recommendations`, `find_recommendations_near`,
 `top_businesses`, `get_business`, `get_recommendation`, `get_expert`,
 `list_experts`. Session tool: `get_screen_context`. App tooly:
-`present_choices`, `open_business`, `open_expert`, `show_on_map`.
+`present_choices`, `open_business`, `open_expert`, `show_on_map`. Klientský
+tool: `find_food_along_route`.
+
+### `find_food_along_route` (počítá klient)
+
+Jídlo po cestě autem. Trasu a zajížďky počítá appka přes Apple Mapy (na
+zařízení zdarma, na serveru nedostupné); server jen čeká na výsledek a podniky
+z `stops` si zapamatuje, aby na ně šlo `present_choices` a `open_business`.
+
+Argumenty: `destination` (povinné), `origin` (vynechat = aktuální poloha),
+`via`, `avoid_tolls` (bez dálniční známky), `departure_time` (ISO 8601),
+`stop_position` (`middle` | `early` | `late` | `anywhere`), `kind`
+(`food` | `coffee` | `any`), `max_detour_minutes`.
+
+Doručení výsledku:
+
+- **OpenAI** — klient uvidí `function_call` v datovém kanálu (`item.call_id`),
+  spočítá výsledek a pošle `POST /live/session/{id}/client-result`
+  `{ "call_id": "…", "result": { … } }` → 204. Sideband čeká max. 30 s, pak
+  modelu vrátí chybu. Výsledek, který dorazí dřív než sideband, se neztratí.
+- **Gemini** — klient ho nerelayuje hned, ale až s výsledkem:
+  `POST /live/session/{id}/tool` `{ "name", "args", "result": { … } }`.
+
+Tvar výsledku (čte ho instrukce backendu):
+
+```json
+{
+  "origin": "Tvoje poloha", "destination": "Vimperk", "travel_minutes": 179,
+  "distance_km": 271, "avoids_highways": false, "vignette_known": false,
+  "departure_time": "08:00",
+  "stops": [
+    { "business_id": "…", "name": "Triko Tábor", "type": "Bistro", "experts_count": 6,
+      "detour_minutes": 15, "minutes_from_start": 108, "share_of_route_percent": 60,
+      "arrival_time": "09:55", "open_at_arrival": true, "latitude": 49.41, "longitude": 14.66 }
+  ]
+}
+```
+
+Chyba: `{ "error": "…", "stops": [] }`. Apple Mapy české dálnice na známku
+nepovažují za zpoplatněné, takže „bez známky“ appka řeší vyhnutím se dálnicím.
 
 ### `top_businesses`
 

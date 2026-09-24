@@ -52,6 +52,13 @@ const contextRequestSchema = z.object({
 const toolRequestSchema = z.object({
   name: z.string().min(1).max(64),
   args: z.union([z.record(z.string(), z.unknown()), z.string()]).optional(),
+  // Only for client tools: the app already computed the answer and relays it with the call.
+  result: z.record(z.string(), z.unknown()).optional(),
+});
+
+const clientResultSchema = z.object({
+  call_id: z.string().min(1).max(128),
+  result: z.record(z.string(), z.unknown()),
 });
 
 const liveEnabled = (): boolean => process.env.LIVE_ENABLED !== "false";
@@ -224,14 +231,14 @@ liveRoutes.post("/live/session/:id/tool", async (c) => {
     return c.json({ error: "Invalid request body.", detail: z.prettifyError(parsed.error) }, 400);
   }
 
-  const { name, args } = parsed.data;
+  const { name, args, result: clientResult } = parsed.data;
   if (!LIVE_TOOL_NAMES.has(name)) {
     return c.json({ error: `Unknown tool: ${name}` }, 400);
   }
 
   const started = Date.now();
   try {
-    const result = await session.state.execute(name, args ?? {});
+    const result = await session.state.execute(name, args ?? {}, { result: clientResult });
     const capped = capToolPayload(result);
     console.log(
       `[live ${session.provider} ${session.id.slice(-6)}] tool ${name} out=${capped.json.length}B ${Date.now() - started}ms`,
@@ -244,6 +251,24 @@ liveRoutes.post("/live/session/:id/tool", async (c) => {
     // tool result rather than an HTTP error the client would have to invent one for.
     return c.json({ result: { error: detail } }, 200);
   }
+});
+
+/**
+ * Result of a client tool on an OpenAI session. The call reached the app over the
+ * data channel; the sideband handler is waiting for this to answer the model.
+ */
+liveRoutes.post("/live/session/:id/client-result", async (c) => {
+  const session = getLiveSession(c.req.param("id"));
+  if (!session) return c.json({ error: "Unknown session." }, 404);
+
+  const body = await c.req.json().catch(() => null);
+  const parsed = clientResultSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid request body.", detail: z.prettifyError(parsed.error) }, 400);
+  }
+
+  session.state.deliverClientResult(parsed.data.call_id, parsed.data.result);
+  return c.body(null, 204);
 });
 
 liveRoutes.get("/live/session/:id/choices", (c) => {
