@@ -19,6 +19,7 @@ import {
 import {
   backendInstructionsWithScreen,
   buildSessionConfig,
+  greetingText,
   screenContextLine,
   type LiveClientContext,
 } from "./session-config.js";
@@ -32,7 +33,6 @@ const ACK_TIMEOUT_MS = 4000;
  * the model paraphrases) beat instructions.append by ~2 s to first audio, so the
  * greeting goes out as commentary.
  */
-const GREETING_TEXT = "Ahoj, tady Futrumi. Kam máš chuť?";
 const GREETING_SPOKEN_WINDOW_MS = 10000;
 
 export type ScreenContextTransport = "session.update" | "session.thinking.append";
@@ -230,7 +230,7 @@ export class LiveConciergeSession implements LiveSessionRecord {
       type: "session.commentary.append",
       event_id: `greeting-${(this.ackSeq += 1)}`,
       delegation_id: null,
-      content: GREETING_TEXT,
+      content: greetingText(),
     });
     this.log("greeting requested");
   }

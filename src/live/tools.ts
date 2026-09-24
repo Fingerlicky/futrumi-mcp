@@ -307,8 +307,11 @@ export const CLIENT_TOOLS: FunctionTool[] = [
     parameters: {
       type: "object",
       properties: {
-        destination: { type: "string", description: 'Cíl cesty, např. "Vimperk" nebo "Šumava, Kvilda".' },
-        origin: { type: "string", description: "Start cesty. Vynech, když jede odsud (aktuální poloha)." },
+        destination: {
+          type: "string",
+          description: 'Cíl cesty, např. "Vimperk" nebo "Šumava, Kvilda". "current_location", když jede sem, kde je teď (třeba domů).',
+        },
+        origin: { type: "string", description: 'Start cesty. Vynech nebo "current_location", když vyjíždí odsud.' },
         via: { type: "string", description: 'Místo, přes které uživatel jede, když ho zmíní, např. "Tábor".' },
         avoid_tolls: {
           type: "boolean",
@@ -329,6 +332,12 @@ export const CLIENT_TOOLS: FunctionTool[] = [
           description: "food = najíst se (výchozí), coffee = kavárny a cukrárny, any = cokoli včetně farem a obchodů.",
         },
         max_detour_minutes: { type: "integer", minimum: 5, maximum: 90, description: "Výchozí 30." },
+        route_index: {
+          type: "integer",
+          minimum: 0,
+          maximum: 2,
+          description: "Která z alternativních tras z předchozího výsledku (alternatives). Vynech pro doporučenou trasu.",
+        },
       },
       required: ["destination"],
       additionalProperties: false,
