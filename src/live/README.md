@@ -295,7 +295,16 @@ Tvar výsledku (čte ho instrukce backendu):
 }
 ```
 
-Chyba: `{ "error": "…", "stops": [] }`. Apple Mapy české dálnice na známku
+Chyba: `{ "error": "…", "stops": [] }`.
+
+Po výsledku appka sama otevře obrazovku Po cestě a ukáže trasu na mapě. Průvodce
+pak ovládá výběr dvěma app tooly (server odpoví hned `{ ok, handled_by: "app" }`,
+`business_id` musí být ze `stops` posledního výsledku):
+
+| Tool | Argumenty | Co udělá appka |
+|---|---|---|
+| `select_route_stop` | `{ business_id }` | zvýrazní zastávku na mapě i v seznamu |
+| `navigate_to_stop` | `{ business_id, app? }` (`google_maps` / `waze` / `apple_maps` / `mapy_cz`) | otevře navigaci; bez `app` použije zapamatovanou (`navigation_app` ve výsledku) | Apple Mapy české dálnice na známku
 nepovažují za zpoplatněné, takže „bez známky“ appka řeší vyhnutím se dálnicím.
 
 ### `top_businesses`

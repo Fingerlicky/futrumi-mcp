@@ -5,6 +5,7 @@ import {
   openBusiness,
   openExpert,
   presentChoices,
+  routeStopAction,
   runTool,
   screenContextPayload,
   showOnMap,
@@ -142,6 +143,9 @@ export class ToolSessionState {
     }
     if (name === "show_on_map") {
       return showOnMap(args, this.knownBusinesses);
+    }
+    if (name === "select_route_stop" || name === "navigate_to_stop") {
+      return routeStopAction(args, this.knownBusinesses);
     }
     return { error: `Unknown tool: ${name}` };
   }

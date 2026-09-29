@@ -294,6 +294,41 @@ export const APP_TOOLS: FunctionTool[] = [
       additionalProperties: false,
     },
   },
+  {
+    type: "function",
+    name: "select_route_stop",
+    description:
+      "Zvýrazní zastávku z find_food_along_route na mapě i v seznamu aplikace. Volej pokaždé, když o konkrétní zastávce mluvíš nebo si ji uživatel vybere.",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        business_id: { type: "string", description: "business_id ze stops posledního find_food_along_route." },
+      },
+      required: ["business_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "navigate_to_stop",
+    description:
+      "Otevře navigační aplikaci do vybrané zastávky. Volej, až uživatel výslovně řekne, že chce vyrazit. Google Maps povede přes zastávku až do cíle, ostatní jen k zastávce.",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        business_id: { type: "string", description: "business_id ze stops posledního find_food_along_route." },
+        app: {
+          type: "string",
+          enum: ["google_maps", "waze", "apple_maps", "mapy_cz"],
+          description: "Vynech, když výsledek find_food_along_route vrátil navigation_app a uživatel nechce jinou.",
+        },
+      },
+      required: ["business_id"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 /** Computed by the app (Apple Maps routing is free there and unavailable here); the server only waits for the result. */
@@ -302,7 +337,7 @@ export const CLIENT_TOOLS: FunctionTool[] = [
     type: "function",
     name: "find_food_along_route",
     description:
-      "Najde doporučené podniky po cestě autem a spočítá, o kolik minut zajížďka prodlouží cestu a kde na trase podnik leží. Použij na „jedu do X, je po cestě něco dobrého?“, „kde se cestou najíst“. Trasu počítá aplikace přes Apple Mapy.",
+      "Najde doporučené podniky po cestě autem a spočítá, o kolik minut zajížďka prodlouží cestu a kde na trase podnik leží. Použij na „jedu do X, je po cestě něco dobrého?“, „kde se cestou najíst“. Trasu počítá aplikace přes Apple Mapy a sama otevře obrazovku Po cestě s trasou a zastávkami na mapě. Volej znovu při každé změně (jiná trasa, jiný typ, známka).",
     strict: false,
     parameters: {
       type: "object",
@@ -328,8 +363,8 @@ export const CLIENT_TOOLS: FunctionTool[] = [
         },
         kind: {
           type: "string",
-          enum: ["food", "coffee", "any"],
-          description: "food = najíst se (výchozí), coffee = kavárny a cukrárny, any = cokoli včetně farem a obchodů.",
+          enum: ["food", "coffee", "shopping", "any"],
+          description: "food = najíst se (výchozí), coffee = kavárny a cukrárny, shopping = nakoupit na farmě, v obchodě nebo pekárně, any = cokoli.",
         },
         max_detour_minutes: { type: "integer", minimum: 5, maximum: 90, description: "Výchozí 30." },
         route_index: {
@@ -926,4 +961,14 @@ export function knownFromRouteResult(result: unknown): KnownBusiness[] {
       },
     ];
   });
+}
+
+/** Route stop tools act in the app; the ID must come from the trip the app reported. */
+export function routeStopAction(
+  rawArgs: ToolArgs,
+  known: Map<string, KnownBusiness>,
+): { ok: true; handled_by: "app"; business_id: string; name: string } | UnknownIdsPayload {
+  const result = openBusiness(rawArgs, known);
+  if (result.ok) return result;
+  return { ...result, hint: "Použij business_id ze stops posledního find_food_along_route." };
 }
