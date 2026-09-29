@@ -112,7 +112,7 @@ Hlasová část (`/live/*`) běží ve stejné službě. Kontrakt pro klienty je
 | `OPENAI_API_KEY` | **secret** | Bez něj `POST /live/session` vrací 503. |
 | `LIVE_ACCESS_CODES` | **secret** | Kódy oddělené čárkou pro hlavičku `x-live-access-code`. Prázdné = bez kontroly (jen lokálně!). |
 | `LIVE_ENABLED` | plain | `false` skryje celé `/live/*` za 404. |
-| `LIVE_BACKEND_MODEL` | plain | Responses model, na který Live deleguje (`gpt-5.6-luna`). |
+| `LIVE_BACKEND_MODEL` | plain | Responses model, na který Live deleguje (`gpt-6-luna`). |
 | `LIVE_MAX_SESSIONS` | plain | Souběžné session na proces, pak 429. |
 | `LIVE_MAX_SESSION_SECONDS` | plain | Tvrdý strop jednoho hovoru (default 600). |
 

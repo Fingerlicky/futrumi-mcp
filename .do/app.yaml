@@ -45,7 +45,7 @@ services:
         value: "true"
         scope: RUN_TIME
       - key: LIVE_BACKEND_MODEL
-        value: gpt-5.6-luna
+        value: gpt-6-luna
         scope: RUN_TIME
       # Gemini Live (provider=gemini). Without the GEMINI_API_KEY secret the
       # provider answers 503 and the OpenAI path is unaffected.

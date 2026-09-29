@@ -391,7 +391,7 @@ export function buildSessionConfig(context: LiveClientContext): MediaSessionConf
     delegation: {
       type: "responses",
       responses: {
-        model: process.env.LIVE_BACKEND_MODEL?.trim() || "gpt-5.6-luna",
+        model: process.env.LIVE_BACKEND_MODEL?.trim() || "gpt-6-luna",
         instructions: backendInstructionsWithScreen(context.screen),
         tools: LIVE_TOOLS,
         tool_choice: "auto",
