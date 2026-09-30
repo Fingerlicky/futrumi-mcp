@@ -337,7 +337,7 @@ export const CLIENT_TOOLS: FunctionTool[] = [
     type: "function",
     name: "find_food_along_route",
     description:
-      "Najde doporučené podniky po cestě autem a spočítá, o kolik minut zajížďka prodlouží cestu a kde na trase podnik leží. Použij na „jedu do X, je po cestě něco dobrého?“, „kde se cestou najíst“. Trasu počítá aplikace přes Apple Mapy a sama otevře obrazovku Po cestě s trasou a zastávkami na mapě. Volej znovu při každé změně (jiná trasa, jiný typ, známka).",
+      "Najde doporučené podniky po cestě autem nebo pěšky a spočítá, o kolik minut zajížďka prodlouží cestu a kde na trase podnik leží. Použij na „jedu do X, je po cestě něco dobrého?“, „kde se cestou najíst“, „jdu pěšky na nádraží, kde si cestou dám kafe“. Trasu počítá aplikace přes Apple Mapy a sama otevře obrazovku Po cestě s trasou a zastávkami na mapě. Volej znovu při každé změně (jiná trasa, jiný typ, známka).",
     strict: false,
     parameters: {
       type: "object",
@@ -348,9 +348,14 @@ export const CLIENT_TOOLS: FunctionTool[] = [
         },
         origin: { type: "string", description: 'Start cesty. Vynech nebo "current_location", když vyjíždí odsud.' },
         via: { type: "string", description: 'Místo, přes které uživatel jede, když ho zmíní, např. "Tábor".' },
+        travel_mode: {
+          type: "string",
+          enum: ["car", "walk"],
+          description: "walk, když jde pěšky („jdu“, „procházka“, „pěšky“); jinak car (výchozí). Pěšky je koridor jen pár set metrů a zajížďky v minutách chůze.",
+        },
         avoid_tolls: {
           type: "boolean",
-          description: "true, když uživatel nemá dálniční známku. Vynech, když to neřekl — aplikace použije uloženou odpověď.",
+          description: "Jen autem: true, když uživatel nemá dálniční známku. Vynech, když to neřekl — aplikace použije uloženou odpověď.",
         },
         departure_time: {
           type: "string",
@@ -366,7 +371,7 @@ export const CLIENT_TOOLS: FunctionTool[] = [
           enum: ["food", "coffee", "shopping", "any"],
           description: "food = najíst se (výchozí), coffee = kavárny a cukrárny, shopping = nakoupit na farmě, v obchodě nebo pekárně, any = cokoli.",
         },
-        max_detour_minutes: { type: "integer", minimum: 5, maximum: 90, description: "Výchozí 30." },
+        max_detour_minutes: { type: "integer", minimum: 5, maximum: 90, description: "Výchozí 30 autem, 20 pěšky." },
         route_index: {
           type: "integer",
           minimum: 0,
