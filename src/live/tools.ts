@@ -8,6 +8,8 @@ import { getRecommendation } from "../services/get-recommendation.js";
 import { listExperts } from "../services/list-experts.js";
 import { searchRecommendations } from "../services/search-recommendations.js";
 import { topBusinesses } from "../services/top-businesses.js";
+import { dailyMenu, loadMenuData, menuSummary, searchMenu } from "../services/menu-data.js";
+import { resolveLocation } from "../geocode.js";
 import type {
   BusinessDetail,
   BusinessListItem,
@@ -199,6 +201,41 @@ export const DATA_TOOLS: FunctionTool[] = [
         pageNumber: { type: "integer", minimum: 0 },
         pageSize: { type: "integer", minimum: 1, maximum: 50 },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "search_menu_items",
+    description:
+      "Najde konkrétní jídlo nebo pití v jídelních lístcích a aktuálních nabídkách podniků (zatím jen Brno): kde se dá dát svíčková, kolik stojí, kdo má dnes polévku. Vrací podnik, přesný název z lístku, cenu, odkud to je a vzdálenost. Na doporučení expertů použij search_recommendations.",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Jídlo nebo pití, jak ho uživatel řekl, např. „svíčková“, „smažený sýr“, „flat white“." },
+        locationQuery: { type: "string", description: "Místo, kolem kterého hledat." },
+        latitude: { type: "number" },
+        longitude: { type: "number" },
+        radiusMeters: { type: "integer", minimum: 100, maximum: 50000 },
+        limit: { type: "integer", minimum: 1, maximum: 10 },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "get_daily_menu",
+    description:
+      "Denní a týdenní menu a aktuální nabídky jednoho podniku (zatím jen Brno): co mají dnes k obědu. Vrací i odkud nabídka je a kdy byla zveřejněná.",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        business_id: { type: "string", description: "Futrumi business ID from a tool result." },
+      },
+      required: ["business_id"],
       additionalProperties: false,
     },
   },
@@ -398,6 +435,16 @@ const truncate = (text: string | null | undefined, max: number): string | null =
   const compact = text.trim().replace(/\s+/g, " ");
   return compact.length <= max ? compact : `${compact.slice(0, max - 1).trimEnd()}...`;
 };
+
+// Den podle Prahy, ne podle UTC: denní menu po půlnoci UTC (1–2 h ráno) by jinak
+// patřilo včerejšku.
+function pragueToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Prague" }).format(new Date());
+}
+
+function dedupeKnown(list: KnownBusiness[]): KnownBusiness[] {
+  return [...new Map(list.map((b) => [b.business_id, b])).values()];
+}
 
 const clamp = (value: number | undefined, fallback: number, min: number, max: number): number => {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
@@ -703,6 +750,60 @@ export async function runTool(name: string, rawArgs: ToolArgs, context: ToolCont
         businesses: result.businesses.map(knownFromBusinessListItem),
       };
     }
+    case "search_menu_items": {
+      const query = stringArg(parsedArgs, "query") ?? context.message ?? "";
+      const data = await loadMenuData();
+      if (!data) return { payload: { error: "Data lístků teď nejsou k dispozici." }, businesses: [] };
+      let location;
+      let resolvedFrom: string | undefined;
+      try {
+        const resolved = await resolveLocation({
+          latitude: numberArg(parsedArgs, "latitude"),
+          longitude: numberArg(parsedArgs, "longitude"),
+          locationQuery: stringArg(parsedArgs, "locationQuery"),
+        });
+        location = resolved.location;
+        resolvedFrom = resolved.resolvedFrom;
+      } catch {
+        location = undefined;
+      }
+      const result = searchMenu(data, {
+        query,
+        location,
+        radiusMeters: numberArg(parsedArgs, "radiusMeters"),
+        today: pragueToday(),
+        limit: clamp(numberArg(parsedArgs, "limit"), 6, 1, 10),
+      });
+      return {
+        payload: {
+          coverage: `lístky a nabídky: ${data.city}, data z ${data.generatedOn}`,
+          resolvedFrom,
+          total: result.total,
+          hits: result.hits,
+          hint: result.total
+            ? "Řekni podnik, cenu a odkud to je; u nabídky s „nejisté“ dodej, že je dobré to ověřit."
+            : "Nic nenalezeno. Zkus obecnější slovo, nebo řekni, že lístek toho podniku nemáme.",
+        },
+        businesses: dedupeKnown(result.hits.map((hit) => ({
+          business_id: hit.business_id, name: hit.business, expert: null, quote: null,
+          deeplink: businessDeeplink(hit.business_id),
+        }))),
+      };
+    }
+    case "get_daily_menu": {
+      const businessId = stringArg(parsedArgs, "business_id");
+      if (!businessId) return { payload: { error: "Missing business_id." }, businesses: [] };
+      const data = await loadMenuData();
+      const menu = data ? dailyMenu(data, businessId, pragueToday()) : null;
+      if (!menu) {
+        return { payload: { business_id: businessId, error: "Pro tento podnik lístek ani nabídky nemáme." }, businesses: [] };
+      }
+      return {
+        payload: { ...menu, hint: menu.offers.length ? undefined : "Dnešní nabídku nemáme; řekni to a nevymýšlej." },
+        businesses: [{ business_id: menu.business_id, name: menu.business, expert: null, quote: null,
+          deeplink: businessDeeplink(menu.business_id) }],
+      };
+    }
     case "get_business": {
       const businessId = stringArg(parsedArgs, "business_id");
       if (!businessId) return { payload: { error: "Missing business_id." }, businesses: [] };
@@ -711,8 +812,10 @@ export async function runTool(name: string, rawArgs: ToolArgs, context: ToolCont
         latitude: numberArg(parsedArgs, "latitude"),
         longitude: numberArg(parsedArgs, "longitude"),
       });
+      const data = await loadMenuData();
+      const menu = data ? menuSummary(data, business.id) : null;
       return {
-        payload: { business: compactBusinessDetail(business) },
+        payload: { business: compactBusinessDetail(business), ...(menu ? { menu } : {}) },
         businesses: [knownFromBusinessDetail(business)],
         experts: business.recommendations.map((rec) => knownExpertRef(rec.expert)),
       };

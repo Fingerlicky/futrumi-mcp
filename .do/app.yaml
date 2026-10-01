@@ -37,8 +37,8 @@ services:
       - key: FUTRUMI_DEEPLINK_BASE
         value: https://futrumi.cz
         scope: RUN_TIME
-      # Voice concierge (src/live). OPENAI_API_KEY, GEMINI_API_KEY and
-      # LIVE_ACCESS_CODES are secrets — set them in the DO dashboard as SECRET
+      # Voice concierge (src/live). OPENAI_API_KEY, GEMINI_API_KEY,
+      # LIVE_ACCESS_CODES and MENU_DATA_TOKEN are secrets — set them in the DO dashboard as SECRET
       # envs, never here. Committing them with a placeholder value would
       # overwrite the encrypted value on the next deploy.
       - key: LIVE_ENABLED

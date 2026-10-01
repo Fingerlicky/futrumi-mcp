@@ -115,6 +115,8 @@ Hlasová část (`/live/*`) běží ve stejné službě. Kontrakt pro klienty je
 | `LIVE_BACKEND_MODEL` | plain | Responses model, na který Live deleguje (`gpt-6-luna`). |
 | `LIVE_MAX_SESSIONS` | plain | Souběžné session na proces, pak 429. |
 | `LIVE_MAX_SESSION_SECONDS` | plain | Tvrdý strop jednoho hovoru (default 600). |
+| `MENU_DATA_TOKEN` | **secret** | Token k neveřejným lístkům a denním menu (Worker `futrumi-data` na Cloudflare). Bez něj nástroje `search_menu_items` a `get_daily_menu` hlásí, že data nejsou k dispozici. |
+| `MENU_DATA_URL` | plain | Volitelně jiná adresa dat; výchozí je Worker `futrumi-data`. Lokálně stačí `MENU_DATA_PATH` se souborem. |
 
 Tajné hodnoty patří jen do DO dashboardu (App → Settings → App-Level
 Environment Variables, typ `SECRET`). `.do/app.yaml` drží jen ne-tajné.
