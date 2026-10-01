@@ -147,6 +147,9 @@ export class ToolSessionState {
     if (name === "select_route_stop" || name === "navigate_to_stop") {
       return routeStopAction(args, this.knownBusinesses);
     }
+    if (name === "return_to_app" || name === "end_call") {
+      return { ok: true, handled_by: "app" };
+    }
     return { error: `Unknown tool: ${name}` };
   }
 

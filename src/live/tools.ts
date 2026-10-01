@@ -366,6 +366,22 @@ export const APP_TOOLS: FunctionTool[] = [
       additionalProperties: false,
     },
   },
+  {
+    type: "function",
+    name: "return_to_app",
+    description:
+      "Pošle upozornění, kterým se uživatel jedním klepnutím vrátí z navigace do aplikace Futrumi. Aplikace se do popředí sama přepnout neumí. Volej, když chce zpátky do Futrumi nebo vidět mapu či detail.",
+    strict: false,
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    type: "function",
+    name: "end_call",
+    description:
+      "Ukončí hovor. Volej, když se uživatel loučí, řekne, že nic dalšího nepotřebuje, nebo hovor výslovně ukončí. Nejdřív se krátce rozluč.",
+    strict: false,
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
 ];
 
 /** Computed by the app (Apple Maps routing is free there and unavailable here); the server only waits for the result. */
