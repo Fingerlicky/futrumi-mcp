@@ -370,7 +370,7 @@ export const APP_TOOLS: FunctionTool[] = [
     type: "function",
     name: "return_to_app",
     description:
-      "Pošle upozornění, kterým se uživatel jedním klepnutím vrátí z navigace do aplikace Futrumi. Aplikace se do popředí sama přepnout neumí. Volej, když chce zpátky do Futrumi nebo vidět mapu či detail.",
+      "Připraví návrat do aplikace Futrumi: během hovoru je v ostrůvku nahoře a na zamčené obrazovce, klepnutím se otevře (bez ostrůvku pošle upozornění). Aplikace se do popředí sama přepnout neumí. Volej, když chce zpátky do Futrumi nebo vidět mapu či detail.",
     strict: false,
     parameters: { type: "object", properties: {}, additionalProperties: false },
   },
